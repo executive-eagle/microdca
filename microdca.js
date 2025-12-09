@@ -1,4 +1,3 @@
-<script>
 (function () {
   function formatMoney(x) {
     return x.toLocaleString(undefined, {
@@ -1013,4 +1012,3 @@
     if (incomePngBtn) incomePngBtn.addEventListener("click", downloadIncomePNG);
   });
 })();
-</script>
