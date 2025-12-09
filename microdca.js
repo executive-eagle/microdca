@@ -32,6 +32,58 @@
     Chart.register(window["chartjs-plugin-zoom"]);
   }
 
+  /* ================================
+     TOTALS ROW CALCULATOR
+  ================================= */
+  function updateAssetTotals() {
+    const rows = document.querySelectorAll(".asset-row");
+
+    let count = 0;
+    let allocSum = 0;
+    let weightedGrowth = 0;
+    let weightedYield = 0;
+    let weightedReinvest = 0;
+
+    rows.forEach(row => {
+      const alloc    = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
+      const growth   = parseFloat(row.querySelector(".asset-growth")?.value || 0);
+      const yieldPct = parseFloat(row.querySelector(".asset-yield")?.value || 0);
+      const reinvest = parseFloat(row.querySelector(".asset-reinvest")?.value || 0);
+
+      if (alloc > 0) count++;
+
+      allocSum          += alloc;
+      weightedGrowth    += growth * alloc;
+      weightedYield     += yieldPct * alloc;
+      weightedReinvest  += reinvest * alloc;
+    });
+
+    const avgGrowth   = allocSum ? (weightedGrowth / allocSum) : 0;
+    const avgYield    = allocSum ? (weightedYield / allocSum) : 0;
+    const avgReinvest = allocSum ? (weightedReinvest / allocSum) : 0;
+
+    const countEl = document.getElementById("totalsCount");
+    const allocEl = document.getElementById("totalsAlloc");
+    const growthEl = document.getElementById("totalsGrowth");
+    const yieldEl = document.getElementById("totalsYield");
+    const reinvEl = document.getElementById("totalsReinvest");
+    const rowEl = document.getElementById("assetTotalsRow");
+
+    if (!countEl || !allocEl || !growthEl || !yieldEl || !reinvEl || !rowEl) return;
+
+    countEl.textContent  = count;
+    allocEl.textContent  = allocSum.toFixed(1) + "%";
+    growthEl.textContent = avgGrowth.toFixed(2) + "%";
+    yieldEl.textContent  = avgYield.toFixed(2) + "%";
+    reinvEl.textContent  = avgReinvest.toFixed(1) + "%";
+
+    if (Math.abs(allocSum - 100) > 0.05) {
+      rowEl.classList.add("invalid");
+    } else {
+      rowEl.classList.remove("invalid");
+    }
+  }
+
   function buildAssetRows(count) {
     const container = document.getElementById("assetsContainer");
     if (!container) return;
@@ -82,6 +134,14 @@
     hint.innerHTML =
       'Tip: Many users set Asset 1 = <strong>Bitcoin</strong> and Asset 2 = <strong>income ETF</strong>, but you can model up to 10 different assets.';
     container.appendChild(hint);
+
+    // wire totals row after rows are created
+    setTimeout(() => {
+      container.querySelectorAll(".asset-row input").forEach(input => {
+        input.addEventListener("input", updateAssetTotals);
+      });
+      updateAssetTotals();
+    }, 0);
   }
 
   function calculateProjection() {
@@ -537,7 +597,6 @@
       "#a3e048", "#f7d038", "#eb7532", "#e6261f", "#3b7dd8"
     ];
 
-    // ✅ define before using it
     const isNarrowScreen = window.innerWidth <= 600;
 
     const lineDatasets = [
@@ -625,8 +684,8 @@
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
-        elements: { /* your existing point config here */ },
-        plugins: { /* your existing legend + zoom config here */ },
+        elements: {},
+        plugins: {},
         layout: {
           padding: {
             top: 10,
