@@ -35,54 +35,50 @@
   /* ================================
      TOTALS ROW CALCULATOR
   ================================= */
-  function updateAssetTotals() {
+    function updateAssetTotals() {
     const rows = document.querySelectorAll(".asset-row");
 
-    let count = 0;
     let allocSum = 0;
     let weightedGrowth = 0;
     let weightedYield = 0;
     let weightedReinvest = 0;
 
     rows.forEach(row => {
-      const alloc    = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
-      const growth   = parseFloat(row.querySelector(".asset-growth")?.value || 0);
-      const yieldPct = parseFloat(row.querySelector(".asset-yield")?.value || 0);
-      const reinvest = parseFloat(row.querySelector(".asset-reinvest")?.value || 0);
+        const alloc    = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
+        const growth   = parseFloat(row.querySelector(".asset-growth")?.value || 0);
+        const yieldPct = parseFloat(row.querySelector(".asset-yield")?.value || 0);
+        const reinvest = parseFloat(row.querySelector(".asset-reinvest")?.value || 0);
 
-      if (alloc > 0) count++;
-
-      allocSum          += alloc;
-      weightedGrowth    += growth * alloc;
-      weightedYield     += yieldPct * alloc;
-      weightedReinvest  += reinvest * alloc;
+        allocSum         += alloc;
+        weightedGrowth   += growth * alloc;
+        weightedYield    += yieldPct * alloc;
+        weightedReinvest += reinvest * alloc;
     });
 
     const avgGrowth   = allocSum ? (weightedGrowth / allocSum) : 0;
     const avgYield    = allocSum ? (weightedYield / allocSum) : 0;
     const avgReinvest = allocSum ? (weightedReinvest / allocSum) : 0;
 
-    const countEl = document.getElementById("totalsCount");
-    const allocEl = document.getElementById("totalsAlloc");
+    const allocEl  = document.getElementById("totalsAlloc");
     const growthEl = document.getElementById("totalsGrowth");
-    const yieldEl = document.getElementById("totalsYield");
-    const reinvEl = document.getElementById("totalsReinvest");
-    const rowEl = document.getElementById("assetTotalsRow");
+    const yieldEl  = document.getElementById("totalsYield");
+    const reinvEl  = document.getElementById("totalsReinvest");
+    const rowEl    = document.getElementById("assetTotalsRow");
 
-    if (!countEl || !allocEl || !growthEl || !yieldEl || !reinvEl || !rowEl) return;
+    if (!allocEl || !growthEl || !yieldEl || !reinvEl || !rowEl) return;
 
-    countEl.textContent  = count;
     allocEl.textContent  = allocSum.toFixed(1) + "%";
     growthEl.textContent = avgGrowth.toFixed(2) + "%";
     yieldEl.textContent  = avgYield.toFixed(2) + "%";
     reinvEl.textContent  = avgReinvest.toFixed(1) + "%";
 
     if (Math.abs(allocSum - 100) > 0.05) {
-      rowEl.classList.add("invalid");
+        rowEl.classList.add("invalid");
     } else {
-      rowEl.classList.remove("invalid");
+        rowEl.classList.remove("invalid");
     }
-  }
+    }
+
 
   /* ================================
      BUILD ASSET ROWS + TOTALS + TIP
@@ -138,11 +134,6 @@
     totalsRow.className = "asset-totals-row";
     totalsRow.innerHTML = `
       <div class="totals-label">TOTALS</div>
-      
-        <div class="totals-cell">
-            <div id="totalsCount">–</div>
-            <div style="opacity:.65;font-size:11px">Assets</div>
-        </div>
 
         <div class="totals-cell">
             <div id="totalsAlloc">0%</div>
