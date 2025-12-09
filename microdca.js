@@ -537,18 +537,21 @@
       "#a3e048", "#f7d038", "#eb7532", "#e6261f", "#3b7dd8"
     ];
 
+    // ✅ define before using it
+    const isNarrowScreen = window.innerWidth <= 600;
+
     const lineDatasets = [
-    {
+      {
         label: "Total balance",
         data: totalBalances,
         tension: 0.25,
         borderWidth: 2,
         borderColor: "#ef5122",
         fill: false,
-        pointRadius: isNarrowScreen ? 0 : 3,          // ✅ HIDE DOTS ON MOBILE
+        pointRadius: isNarrowScreen ? 0 : 3,
         pointHoverRadius: isNarrowScreen ? 0 : 5
-    },
-    {
+      },
+      {
         label: "Cumulative net income (after tax)",
         data: cumulativeNetIncome,
         tension: 0.25,
@@ -556,9 +559,9 @@
         borderColor: "#ffe08c",
         borderDash: [6,4],
         fill: false,
-        pointRadius: isNarrowScreen ? 0 : 3,          // ✅ HIDE DOTS ON MOBILE
+        pointRadius: isNarrowScreen ? 0 : 3,
         pointHoverRadius: isNarrowScreen ? 0 : 5
-    }
+      }
     ];
 
     assetsMeta.forEach(function (asset, index) {
@@ -581,46 +584,40 @@
     currentStartIndex = 0;
     currentEndIndex   = labels.length - 1;
 
-
     const totalYears = labels.length;
-    const isNarrowScreen = window.innerWidth <= 600;
 
     const commonScales = {
-        x: {
-            offset: false,
-            ticks: {
-            color: "#f5f5f5",
-            font: { size: isNarrowScreen ? 9 : 11 },
-
-            autoSkip: true,
-            maxTicksLimit: isNarrowScreen ? 6 : 10,
-            padding: 8,
-
-            callback(value) {
-                const label = this.getLabelForValue(value);
-                return label.replace("Year ", "");
-            }
-            },
-            grid: {
-            color: "rgba(255,255,255,0.08)"
-            }
+      x: {
+        offset: false,
+        ticks: {
+          color: "#f5f5f5",
+          font: { size: isNarrowScreen ? 9 : 11 },
+          autoSkip: true,
+          maxTicksLimit: isNarrowScreen ? 6 : 10,
+          padding: 8,
+          callback(value) {
+            const label = this.getLabelForValue(value);
+            return label.replace("Year ", "");
+          }
         },
-
-        y: {
-            ticks: {
-            color: "#f5f5f5",
-            font: { size: isNarrowScreen ? 9 : 10 },
-            maxTicksLimit: 6,
-            callback(value) {
-                return "$" + value.toLocaleString();
-            }
-            },
-            grid: {
-            color: "rgba(255,255,255,0.08)"
-            }
+        grid: {
+          color: "rgba(255,255,255,0.08)"
         }
-        };
-
+      },
+      y: {
+        ticks: {
+          color: "#f5f5f5",
+          font: { size: isNarrowScreen ? 9 : 10 },
+          maxTicksLimit: 6,
+          callback(value) {
+            return "$" + value.toLocaleString();
+          }
+        },
+        grid: {
+          color: "rgba(255,255,255,0.08)"
+        }
+      }
+    };
 
     if (mainCanvas) {
       const ctx = mainCanvas.getContext("2d");
@@ -631,16 +628,15 @@
         elements: { /* your existing point config here */ },
         plugins: { /* your existing legend + zoom config here */ },
         layout: {
-            padding: {
-                top: 10,
-                left: 8,
-                right: 8,
-                bottom: 90
-            }
+          padding: {
+            top: 10,
+            left: 8,
+            right: 8,
+            bottom: 90
+          }
         },
         scales: commonScales
-        };
-
+      };
 
       if (!projectionChart) {
         projectionChart = new Chart(ctx, {
