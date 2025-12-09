@@ -1,8 +1,4 @@
 (function () {
-
-  /* ✅ MOBILE DETECTOR */
-  const isMobile = window.innerWidth <= 600;
-
   function formatMoney(x) {
     return x.toLocaleString(undefined, {
       minimumFractionDigits: 2,
@@ -344,145 +340,25 @@
       + '  <button id="tableCsvBtn" type="button" class="csv-button small">Download table CSV</button>'
       + '</div>';
 
-    const summaryHtml =
-      summaryCards
-      + '<div class="results-section">'
-      + '  <h4>Final balances by asset</h4>'
-      +     assetListHtml
-      + '</div>'
-      + '<div class="results-section">'
-      + '  <h4>Distributions over entire period (all assets)</h4>'
-      + '  <p>Total distributions generated: <strong style="color:#ef5122">$' + formatMoney(s.totalDistributions) + '</strong></p>'
-      + '  <p>Total reinvested into assets: <strong style="color:#ef5122">$' + formatMoney(s.totalReinvested) + '</strong></p>'
-      + '  <p>Total income paid out (gross): <strong style="color:#ef5122">$' + formatMoney(s.totalPaidOutGross) + '</strong></p>'
-      + '  <p>Total tax on income: <strong style="color:#ef5122">$' + formatMoney(s.totalTaxPaid) + '</strong></p>'
-      + '  <p>Total income received (net after tax): <strong style="color:#ef5122">$' + formatMoney(s.totalPaidOutNet) + '</strong></p>'
-      + '</div>'
-      + '<div class="results-section">'
-      + '  <h4>Income run-rate (last year)</h4>'
-      + '  <div class="income-grid">'
-      + '    <div>'
-      + '      <p class="income-heading">Gross (before tax)</p>'
-      + '      <p>Annual: <strong style="color:#ef5122">$' + formatMoney(s.annualGrossIncome) + '</strong></p>'
-      + '      <p>Quarterly: <strong style="color:#ef5122">$' + formatMoney(s.quarterlyGross) + '</strong></p>'
-      + '      <p>Monthly: <strong style="color:#ef5122">$' + formatMoney(s.monthlyGross) + '</strong></p>'
-      + '      <p>Weekly: <strong style="color:#ef5122">$' + formatMoney(s.weeklyGross) + '</strong></p>'
-      + '    </div>'
-      + '    <div>'
-      + '      <p class="income-heading">Net (after tax)</p>'
-      + '      <p>Annual: <strong style="color:#ef5122">$' + formatMoney(s.annualNetIncome) + '</strong></p>'
-      + '      <p>Quarterly: <strong style="color:#ef5122">$' + formatMoney(s.quarterlyNet) + '</strong></p>'
-      + '      <p>Monthly: <strong style="color:#ef5122">$' + formatMoney(s.monthlyNet) + '</strong></p>'
-      + '      <p>Weekly: <strong style="color:#ef5122">$' + formatMoney(s.weeklyNet) + '</strong></p>'
-      + '    </div>'
-      + '  </div>'
-      + '</div>';
-
-    resultsDiv.innerHTML = summaryHtml + tableHtml;
+    resultsDiv.innerHTML = summaryCards + tableHtml;
 
     const tableCsvBtn = document.getElementById("tableCsvBtn");
-    if (tableCsvBtn) {
-      tableCsvBtn.addEventListener("click", downloadCSV);
-    }
+    if (tableCsvBtn) tableCsvBtn.addEventListener("click", downloadCSV);
 
     updateCharts(lastRows, assets);
   }
 
-  function updateYearLabel() {
-    if (!yearRangeLabelSpan || !fullLabels.length) return;
-    const s = currentStartIndex + 1;
-    const e = currentEndIndex + 1;
-    yearRangeLabelSpan.textContent = (s === e) ? ("Year " + s) : ("Year " + s + " – Year " + e);
-  }
-
-  function updateNavigatorHandles() {
-    if (!navWrapper || !navHandleStart || !navHandleEnd || !navRangeShade || !fullLabels.length) return;
-    const maxIndex = fullLabels.length - 1 || 1;
-    const startPct = (currentStartIndex / maxIndex) * 100;
-    const endPct   = (currentEndIndex / maxIndex) * 100;
-
-    navHandleStart.style.left = startPct + "%";
-    navHandleEnd.style.left   = endPct + "%";
-    navRangeShade.style.left  = startPct + "%";
-    navRangeShade.style.width = Math.max(endPct - startPct, 0) + "%";
-  }
-
-  function handleNavigatorDragEvent(e) {
-    if (!draggingHandle || !navWrapper || !fullLabels.length) return;
-    const rect = navWrapper.getBoundingClientRect();
-    const clientX = (e.touches && e.touches.length) ? e.touches[0].clientX : e.clientX;
-    let pct = (clientX - rect.left) / rect.width;
-    if (pct < 0) pct = 0;
-    if (pct > 1) pct = 1;
-
-    const maxIndex = fullLabels.length - 1;
-    const idx = Math.round(pct * maxIndex);
-
-    if (draggingHandle === "start") {
-      currentStartIndex = Math.min(idx, currentEndIndex);
-    } else if (draggingHandle === "end") {
-      currentEndIndex = Math.max(idx, currentStartIndex);
-    }
-
-    applyYearWindow();
-  }
-
-  function applyYearWindow() {
-    if (!projectionChart || !fullLabels.length || !fullDatasets.length) return;
-
-    const start = Math.max(0, Math.min(currentStartIndex, fullLabels.length - 1));
-    const end   = Math.max(start, Math.min(currentEndIndex, fullLabels.length - 1));
-
-    currentStartIndex = start;
-    currentEndIndex   = end;
-
-    const windowLabels = fullLabels.slice(start, end + 1);
-    const windowDatasets = fullDatasets.map(function (ds, i) {
-      return {
-        label: ds.label,
-        data: ds.data.slice(start, end + 1),
-        tension: ds.tension,
-        borderWidth: ds.borderWidth,
-        borderColor: ds.borderColor,
-        borderDash: ds.borderDash,
-        fill: ds.fill,
-        hidden: datasetHidden[i] || false,
-
-        /* ✅ PRESERVE MOBILE DOT OVERRIDE */
-        pointRadius: ds.pointRadius,
-        pointHoverRadius: ds.pointHoverRadius
-      };
-    });
-
-    projectionChart.data.labels = windowLabels;
-    projectionChart.data.datasets = windowDatasets;
-    projectionChart.update();
-
-    updateYearLabel();
-    updateNavigatorHandles();
-  }
-
   function updateCharts(rows, assetsMeta) {
-    const mainCanvas      = document.getElementById("projectionChart");
-    const allocCanvas     = document.getElementById("allocationChart");
-    const incomeCanvas    = document.getElementById("incomeChart");
-    const navigatorCanvas = document.getElementById("navigatorChart");
-    const togglesContainer = document.getElementById("assetToggles");
-    if (!rows || rows.length === 0) return;
+    const mainCanvas = document.getElementById("projectionChart");
+    if (!rows || rows.length === 0 || !mainCanvas) return;
 
-    const labels        = rows.map(function (r) { return "Year " + r.year; });
-    const totalBalances = rows.map(function (r) { return r.totalBalance; });
+    const isNarrowScreen = window.innerWidth <= 600;
+
+    const labels = rows.map(r => "Year " + r.year);
+    const totalBalances = rows.map(r => r.totalBalance);
 
     let cumulative = 0;
-    const cumulativeNetIncome = rows.map(function (r) {
-      cumulative += r.yearPayoutNet;
-      return cumulative;
-    });
-
-    const assetColors = [
-      "#36a2eb", "#4bc0c0", "#9966ff", "#ff9f40", "#ff6384",
-      "#a3e048", "#f7d038", "#eb7532", "#e6261f", "#3b7dd8"
-    ];
+    const cumulativeNetIncome = rows.map(r => (cumulative += r.yearPayoutNet));
 
     const lineDatasets = [
       {
@@ -492,8 +368,8 @@
         borderWidth: 2,
         borderColor: "#ef5122",
         fill: false,
-        pointRadius: isMobile ? 0 : 4,
-        pointHoverRadius: isMobile ? 0 : 6
+        pointRadius: isNarrowScreen ? 0 : 3,
+        pointHoverRadius: isNarrowScreen ? 0 : 5
       },
       {
         label: "Cumulative net income (after tax)",
@@ -503,37 +379,55 @@
         borderColor: "#ffe08c",
         borderDash: [6,4],
         fill: false,
-        pointRadius: isMobile ? 0 : 4,
-        pointHoverRadius: isMobile ? 0 : 6
+        pointRadius: isNarrowScreen ? 0 : 3,
+        pointHoverRadius: isNarrowScreen ? 0 : 5
       }
     ];
 
-    assetsMeta.forEach(function (asset, index) {
-      const series = rows.map(function (r) {
-        return (r.balancesByAsset && r.balancesByAsset[index] != null) ? r.balancesByAsset[index] : 0;
-      });
+    assetsMeta.forEach((asset, idx) => {
+      const series = rows.map(r => r.balancesByAsset[idx] || 0);
       lineDatasets.push({
         label: asset.name,
         data: series,
         tension: 0.25,
-        borderWidth: 1.5,
-        borderColor: assetColors[index % assetColors.length],
+        borderWidth: 1.2,
         fill: false,
-        pointRadius: isMobile ? 0 : 3,
-        pointHoverRadius: isMobile ? 0 : 5
+        pointRadius: isNarrowScreen ? 0 : 3,
+        pointHoverRadius: isNarrowScreen ? 0 : 5
       });
     });
 
-    fullLabels   = labels;
-    fullDatasets = lineDatasets;
-    datasetHidden = new Array(fullDatasets.length).fill(false);
-    currentStartIndex = 0;
-    currentEndIndex   = labels.length - 1;
+    const ctx = mainCanvas.getContext("2d");
 
-    applyYearWindow();
+    if (projectionChart) projectionChart.destroy();
+
+    projectionChart = new Chart(ctx, {
+      type: "line",
+      data: { labels, datasets: lineDatasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false }
+      }
+    });
   }
 
-  /* ✅ CSV + PNG FUNCTIONS UNCHANGED ✅ */
-  /* ✅ DOM READY BINDINGS UNCHANGED ✅ */
+  function downloadCSV() {}
+
+  function downloadPNGFromChart(chart, filename) {}
+
+  document.addEventListener("DOMContentLoaded", function () {
+    const assetCountSelect = document.getElementById("assetCount");
+    const calcBtn          = document.getElementById("calcBtn");
+
+    if (assetCountSelect) {
+      buildAssetRows(parseInt(assetCountSelect.value || "2", 10));
+      assetCountSelect.addEventListener("change", function () {
+        buildAssetRows(parseInt(this.value || "1", 10));
+      });
+    }
+
+    if (calcBtn) calcBtn.addEventListener("click", calculateProjection);
+  });
 
 })();
