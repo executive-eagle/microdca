@@ -138,11 +138,31 @@
     totalsRow.className = "asset-totals-row";
     totalsRow.innerHTML = `
       <div class="totals-label">TOTALS</div>
-      <div id="totalsCount" class="totals-cell">–</div>
-      <div id="totalsAlloc" class="totals-cell">0%</div>
-      <div id="totalsGrowth" class="totals-cell">0%</div>
-      <div id="totalsYield" class="totals-cell">0%</div>
-      <div id="totalsReinvest" class="totals-cell">0%</div>
+      
+        <div class="totals-cell">
+            <div id="totalsCount">–</div>
+            <div style="opacity:.65;font-size:11px">Assets</div>
+        </div>
+
+        <div class="totals-cell">
+            <div id="totalsAlloc">0%</div>
+            <div style="opacity:.65;font-size:11px">Total Allocation</div>
+        </div>
+
+        <div class="totals-cell">
+            <div id="totalsGrowth">0%</div>
+            <div style="opacity:.65;font-size:11px">Avg Growth</div>
+        </div>
+
+        <div class="totals-cell">
+            <div id="totalsYield">0%</div>
+            <div style="opacity:.65;font-size:11px">Avg Yield</div>
+        </div>
+
+        <div class="totals-cell">
+            <div id="totalsReinvest">0%</div>
+            <div style="opacity:.65;font-size:11px">Avg Reinvest</div>
+        </div>
     `;
     container.appendChild(totalsRow);
 
