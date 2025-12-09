@@ -84,6 +84,9 @@
     }
   }
 
+  /* ================================
+     BUILD ASSET ROWS + TOTALS + TIP
+  ================================= */
   function buildAssetRows(count) {
     const container = document.getElementById("assetsContainer");
     if (!container) return;
@@ -129,13 +132,28 @@
       container.appendChild(row);
     }
 
+    // TOTALS ROW
+    const totalsRow = document.createElement("div");
+    totalsRow.id = "assetTotalsRow";
+    totalsRow.className = "asset-totals-row";
+    totalsRow.innerHTML = `
+      <div class="totals-label">TOTALS</div>
+      <div id="totalsCount" class="totals-cell">–</div>
+      <div id="totalsAlloc" class="totals-cell">0%</div>
+      <div id="totalsGrowth" class="totals-cell">0%</div>
+      <div id="totalsYield" class="totals-cell">0%</div>
+      <div id="totalsReinvest" class="totals-cell">0%</div>
+    `;
+    container.appendChild(totalsRow);
+
+    // TIP UNDER TOTALS
     const hint = document.createElement("p");
     hint.className = "assets-hint";
     hint.innerHTML =
       'Tip: Many users set Asset 1 = <strong>Bitcoin</strong> and Asset 2 = <strong>income ETF</strong>, but you can model up to 10 different assets.';
     container.appendChild(hint);
 
-    // wire totals row after rows are created
+    // Wire totals updates
     setTimeout(() => {
       container.querySelectorAll(".asset-row input").forEach(input => {
         input.addEventListener("input", updateAssetTotals);
@@ -144,6 +162,9 @@
     }, 0);
   }
 
+  /* ================================
+     CORE CALCULATION
+  ================================= */
   function calculateProjection() {
     const startBalance = parseFloat(document.getElementById("startBalance").value || 0);
     const contributionAmount = parseFloat(document.getElementById("contributionAmount").value || 0);
@@ -444,6 +465,9 @@
     updateCharts(lastRows, assets);
   }
 
+  /* ================================
+     YEAR RANGE + NAVIGATOR
+  ================================= */
   function updateYearLabel() {
     if (!yearRangeLabelSpan || !fullLabels.length) return;
     const s = currentStartIndex + 1;
@@ -502,7 +526,9 @@
         borderColor: ds.borderColor,
         borderDash: ds.borderDash,
         fill: ds.fill,
-        hidden: datasetHidden[i] || false
+        hidden: datasetHidden[i] || false,
+        pointRadius: ds.pointRadius,
+        pointHoverRadius: ds.pointHoverRadius
       };
     });
 
@@ -575,6 +601,9 @@
     updateNavigatorHandles();
   }
 
+  /* ================================
+     CHARTS
+  ================================= */
   function updateCharts(rows, assetsMeta) {
     const mainCanvas      = document.getElementById("projectionChart");
     const allocCanvas     = document.getElementById("allocationChart");
@@ -633,7 +662,9 @@
         tension: 0.25,
         borderWidth: 1.5,
         borderColor: assetColors[index % assetColors.length],
-        fill: false
+        fill: false,
+        pointRadius: isNarrowScreen ? 0 : 2,
+        pointHoverRadius: isNarrowScreen ? 0 : 4
       });
     });
 
@@ -642,8 +673,6 @@
     datasetHidden = new Array(fullDatasets.length).fill(false);
     currentStartIndex = 0;
     currentEndIndex   = labels.length - 1;
-
-    const totalYears = labels.length;
 
     const commonScales = {
       x: {
@@ -907,6 +936,9 @@
     }
   }
 
+  /* ================================
+     CSV / PNG EXPORTS
+  ================================= */
   function downloadCSV() {
     if (!lastRows || lastRows.length === 0 || !lastSummary) {
       alert("Please run a calculation first.");
@@ -1047,6 +1079,9 @@
     downloadPNGFromChart(incomeChart, "microdca_income_chart.png");
   }
 
+  /* ================================
+     INIT
+  ================================= */
   document.addEventListener("DOMContentLoaded", function () {
     const assetCountSelect = document.getElementById("assetCount");
     const calcBtn          = document.getElementById("calcBtn");
@@ -1070,4 +1105,5 @@
     if (allocPngBtn)  allocPngBtn.addEventListener("click", downloadAllocationPNG);
     if (incomePngBtn) incomePngBtn.addEventListener("click", downloadIncomePNG);
   });
+
 })();
