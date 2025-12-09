@@ -340,38 +340,215 @@
       + '  <button id="tableCsvBtn" type="button" class="csv-button small">Download table CSV</button>'
       + '</div>';
 
-    resultsDiv.innerHTML = summaryCards + tableHtml;
+    const summaryHtml =
+      summaryCards
+      + '<div class="results-section">'
+      + '  <h4>Final balances by asset</h4>'
+      +     assetListHtml
+      + '</div>'
+      + '<div class="results-section">'
+      + '  <h4>Distributions over entire period (all assets)</h4>'
+      + '  <p>Total distributions generated: <strong style="color:#ef5122">$' + formatMoney(s.totalDistributions) + '</strong></p>'
+      + '  <p>Total reinvested into assets: <strong style="color:#ef5122">$' + formatMoney(s.totalReinvested) + '</strong></p>'
+      + '  <p>Total income paid out (gross): <strong style="color:#ef5122">$' + formatMoney(s.totalPaidOutGross) + '</strong></p>'
+      + '  <p>Total tax on income: <strong style="color:#ef5122">$' + formatMoney(s.totalTaxPaid) + '</strong></p>'
+      + '  <p>Total income received (net after tax): <strong style="color:#ef5122">$' + formatMoney(s.totalPaidOutNet) + '</strong></p>'
+      + '</div>'
+      + '<div class="results-section">'
+      + '  <h4>Income run-rate (last year)</h4>'
+      + '  <div class="income-grid">'
+      + '    <div>'
+      + '      <p class="income-heading">Gross (before tax)</p>'
+      + '      <p>Annual: <strong style="color:#ef5122">$' + formatMoney(s.annualGrossIncome) + '</strong></p>'
+      + '      <p>Quarterly: <strong style="color:#ef5122">$' + formatMoney(s.quarterlyGross) + '</strong></p>'
+      + '      <p>Monthly: <strong style="color:#ef5122">$' + formatMoney(s.monthlyGross) + '</strong></p>'
+      + '      <p>Weekly: <strong style="color:#ef5122">$' + formatMoney(s.weeklyGross) + '</strong></p>'
+      + '    </div>'
+      + '    <div>'
+      + '      <p class="income-heading">Net (after tax)</p>'
+      + '      <p>Annual: <strong style="color:#ef5122">$' + formatMoney(s.annualNetIncome) + '</strong></p>'
+      + '      <p>Quarterly: <strong style="color:#ef5122">$' + formatMoney(s.quarterlyNet) + '</strong></p>'
+      + '      <p>Monthly: <strong style="color:#ef5122">$' + formatMoney(s.monthlyNet) + '</strong></p>'
+      + '      <p>Weekly: <strong style="color:#ef5122">$' + formatMoney(s.weeklyNet) + '</strong></p>'
+      + '    </div>'
+      + '  </div>'
+      + '</div>';
+
+    resultsDiv.innerHTML = summaryHtml + tableHtml;
 
     const tableCsvBtn = document.getElementById("tableCsvBtn");
-    if (tableCsvBtn) tableCsvBtn.addEventListener("click", downloadCSV);
+    if (tableCsvBtn) {
+      tableCsvBtn.addEventListener("click", downloadCSV);
+    }
 
     updateCharts(lastRows, assets);
   }
 
+  function updateYearLabel() {
+    if (!yearRangeLabelSpan || !fullLabels.length) return;
+    const s = currentStartIndex + 1;
+    const e = currentEndIndex + 1;
+    yearRangeLabelSpan.textContent = (s === e) ? ("Year " + s) : ("Year " + s + " – Year " + e);
+  }
+
+  function updateNavigatorHandles() {
+    if (!navWrapper || !navHandleStart || !navHandleEnd || !navRangeShade || !fullLabels.length) return;
+    const maxIndex = fullLabels.length - 1 || 1;
+    const startPct = (currentStartIndex / maxIndex) * 100;
+    const endPct   = (currentEndIndex / maxIndex) * 100;
+
+    navHandleStart.style.left = startPct + "%";
+    navHandleEnd.style.left   = endPct + "%";
+    navRangeShade.style.left  = startPct + "%";
+    navRangeShade.style.width = Math.max(endPct - startPct, 0) + "%";
+  }
+
+  function handleNavigatorDragEvent(e) {
+    if (!draggingHandle || !navWrapper || !fullLabels.length) return;
+    const rect = navWrapper.getBoundingClientRect();
+    const clientX = (e.touches && e.touches.length) ? e.touches[0].clientX : e.clientX;
+    let pct = (clientX - rect.left) / rect.width;
+    if (pct < 0) pct = 0;
+    if (pct > 1) pct = 1;
+
+    const maxIndex = fullLabels.length - 1;
+    const idx = Math.round(pct * maxIndex);
+
+    if (draggingHandle === "start") {
+      currentStartIndex = Math.min(idx, currentEndIndex);
+    } else if (draggingHandle === "end") {
+      currentEndIndex = Math.max(idx, currentStartIndex);
+    }
+
+    applyYearWindow();
+  }
+
+  function applyYearWindow() {
+    if (!projectionChart || !fullLabels.length || !fullDatasets.length) return;
+
+    const start = Math.max(0, Math.min(currentStartIndex, fullLabels.length - 1));
+    const end   = Math.max(start, Math.min(currentEndIndex, fullLabels.length - 1));
+
+    currentStartIndex = start;
+    currentEndIndex   = end;
+
+    const windowLabels = fullLabels.slice(start, end + 1);
+    const windowDatasets = fullDatasets.map(function (ds, i) {
+      return {
+        label: ds.label,
+        data: ds.data.slice(start, end + 1),
+        tension: ds.tension,
+        borderWidth: ds.borderWidth,
+        borderColor: ds.borderColor,
+        borderDash: ds.borderDash,
+        fill: ds.fill,
+        hidden: datasetHidden[i] || false
+      };
+    });
+
+    projectionChart.data.labels = windowLabels;
+    projectionChart.data.datasets = windowDatasets;
+    projectionChart.update();
+
+    updateYearLabel();
+    updateNavigatorHandles();
+  }
+
+  function initYearRangeControls(totalYears) {
+    const container = document.getElementById("yearRangeControls");
+    if (!container) return;
+    container.innerHTML = "";
+
+    if (totalYears <= 1) return;
+
+    container.innerHTML =
+      '<div class="year-range-header">'
+      + '  <span class="range-label">View years</span>'
+      + '  <span id="yearRangeLabel" class="range-display">Year 1 – Year ' + totalYears + '</span>'
+      + '</div>';
+
+    yearRangeLabelSpan = document.getElementById("yearRangeLabel");
+    updateYearLabel();
+  }
+
+  function initNavigatorControls(totalYears) {
+    navWrapper     = document.getElementById("navigatorWrapper");
+    navHandleStart = document.getElementById("navHandleStart");
+    navHandleEnd   = document.getElementById("navHandleEnd");
+    navRangeShade  = document.getElementById("navRangeShade");
+
+    if (!navWrapper || !navHandleStart || !navHandleEnd || !navRangeShade) return;
+
+    if (totalYears <= 1) {
+      navWrapper.style.display = "none";
+      return;
+    }
+    navWrapper.style.display = "block";
+
+    if (!navigatorInitialized) {
+      const startDrag = function (type) {
+        return function (e) {
+          draggingHandle = type;
+          e.preventDefault();
+        };
+      };
+      const moveDrag = function (e) {
+        if (!draggingHandle) return;
+        handleNavigatorDragEvent(e);
+      };
+      const endDrag = function () { draggingHandle = null; };
+
+      ["mousedown", "touchstart"].forEach(function (evt) {
+        navHandleStart.addEventListener(evt, startDrag("start"));
+        navHandleEnd.addEventListener(evt, startDrag("end"));
+      });
+      ["mousemove", "touchmove"].forEach(function (evt) {
+        document.addEventListener(evt, moveDrag);
+      });
+      ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach(function (evt) {
+        document.addEventListener(evt, endDrag);
+      });
+
+      navigatorInitialized = true;
+    }
+
+    updateNavigatorHandles();
+  }
+
   function updateCharts(rows, assetsMeta) {
-    const mainCanvas = document.getElementById("projectionChart");
-    if (!rows || rows.length === 0 || !mainCanvas) return;
+    const mainCanvas      = document.getElementById("projectionChart");
+    const allocCanvas     = document.getElementById("allocationChart");
+    const incomeCanvas    = document.getElementById("incomeChart");
+    const navigatorCanvas = document.getElementById("navigatorChart");
+    const togglesContainer = document.getElementById("assetToggles");
+    if (!rows || rows.length === 0) return;
 
-    const isNarrowScreen = window.innerWidth <= 600;
-
-    const labels = rows.map(r => "Year " + r.year);
-    const totalBalances = rows.map(r => r.totalBalance);
+    const labels        = rows.map(function (r) { return "Year " + r.year; });
+    const totalBalances = rows.map(function (r) { return r.totalBalance; });
 
     let cumulative = 0;
-    const cumulativeNetIncome = rows.map(r => (cumulative += r.yearPayoutNet));
+    const cumulativeNetIncome = rows.map(function (r) {
+      cumulative += r.yearPayoutNet;
+      return cumulative;
+    });
+
+    const assetColors = [
+      "#36a2eb", "#4bc0c0", "#9966ff", "#ff9f40", "#ff6384",
+      "#a3e048", "#f7d038", "#eb7532", "#e6261f", "#3b7dd8"
+    ];
 
     const lineDatasets = [
-      {
+    {
         label: "Total balance",
         data: totalBalances,
         tension: 0.25,
         borderWidth: 2,
         borderColor: "#ef5122",
         fill: false,
-        pointRadius: isNarrowScreen ? 0 : 3,
+        pointRadius: isNarrowScreen ? 0 : 3,          // ✅ HIDE DOTS ON MOBILE
         pointHoverRadius: isNarrowScreen ? 0 : 5
-      },
-      {
+    },
+    {
         label: "Cumulative net income (after tax)",
         data: cumulativeNetIncome,
         tension: 0.25,
@@ -379,55 +556,463 @@
         borderColor: "#ffe08c",
         borderDash: [6,4],
         fill: false,
-        pointRadius: isNarrowScreen ? 0 : 3,
+        pointRadius: isNarrowScreen ? 0 : 3,          // ✅ HIDE DOTS ON MOBILE
         pointHoverRadius: isNarrowScreen ? 0 : 5
-      }
+    }
     ];
 
-    assetsMeta.forEach((asset, idx) => {
-      const series = rows.map(r => r.balancesByAsset[idx] || 0);
+    assetsMeta.forEach(function (asset, index) {
+      const series = rows.map(function (r) {
+        return (r.balancesByAsset && r.balancesByAsset[index] != null) ? r.balancesByAsset[index] : 0;
+      });
       lineDatasets.push({
         label: asset.name,
         data: series,
         tension: 0.25,
-        borderWidth: 1.2,
-        fill: false,
-        pointRadius: isNarrowScreen ? 0 : 3,
-        pointHoverRadius: isNarrowScreen ? 0 : 5
+        borderWidth: 1.5,
+        borderColor: assetColors[index % assetColors.length],
+        fill: false
       });
     });
 
-    const ctx = mainCanvas.getContext("2d");
+    fullLabels   = labels;
+    fullDatasets = lineDatasets;
+    datasetHidden = new Array(fullDatasets.length).fill(false);
+    currentStartIndex = 0;
+    currentEndIndex   = labels.length - 1;
 
-    if (projectionChart) projectionChart.destroy();
 
-    projectionChart = new Chart(ctx, {
-      type: "line",
-      data: { labels, datasets: lineDatasets },
-      options: {
+    const totalYears = labels.length;
+    const isNarrowScreen = window.innerWidth <= 600;
+
+    const commonScales = {
+        x: {
+            offset: false,
+            ticks: {
+            color: "#f5f5f5",
+            font: { size: isNarrowScreen ? 9 : 11 },
+
+            autoSkip: true,
+            maxTicksLimit: isNarrowScreen ? 6 : 10,
+            padding: 8,
+
+            callback(value) {
+                const label = this.getLabelForValue(value);
+                return label.replace("Year ", "");
+            }
+            },
+            grid: {
+            color: "rgba(255,255,255,0.08)"
+            }
+        },
+
+        y: {
+            ticks: {
+            color: "#f5f5f5",
+            font: { size: isNarrowScreen ? 9 : 10 },
+            maxTicksLimit: 6,
+            callback(value) {
+                return "$" + value.toLocaleString();
+            }
+            },
+            grid: {
+            color: "rgba(255,255,255,0.08)"
+            }
+        }
+        };
+
+
+    if (mainCanvas) {
+      const ctx = mainCanvas.getContext("2d");
+      const options = {
         responsive: true,
         maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false }
+        interaction: { mode: "index", intersect: false },
+        elements: { /* your existing point config here */ },
+        plugins: { /* your existing legend + zoom config here */ },
+        layout: {
+            padding: {
+                top: 10,
+                left: 8,
+                right: 8,
+                bottom: 90
+            }
+        },
+        scales: commonScales
+        };
+
+
+      if (!projectionChart) {
+        projectionChart = new Chart(ctx, {
+          type: "line",
+          data: { labels: [], datasets: [] },
+          options: options
+        });
+      } else {
+        projectionChart.options = options;
       }
-    });
+    }
+
+    if (navigatorCanvas) {
+      const ctxNav = navigatorCanvas.getContext("2d");
+      const navData = {
+        labels: labels,
+        datasets: [{
+          label: "Navigator",
+          data: totalBalances,
+          tension: 0.25,
+          borderWidth: 1,
+          borderColor: "#ef5122",
+          fill: true,
+          backgroundColor: "rgba(239,81,34,0.18)",
+          pointRadius: 0
+        }]
+      };
+      const navOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: false }
+        },
+        scales: {
+          x: { display: false },
+          y: { display: false }
+        }
+      };
+
+      if (navigatorChart) {
+        navigatorChart.data = navData;
+        navigatorChart.options = navOptions;
+        navigatorChart.update();
+      } else {
+        navigatorChart = new Chart(ctxNav, { type: "line", data: navData, options: navOptions });
+      }
+    }
+
+    initYearRangeControls(labels.length);
+    initNavigatorControls(labels.length);
+    applyYearWindow();
+
+    if (togglesContainer) {
+      togglesContainer.innerHTML = "";
+
+      if (fullDatasets.length > 2) {
+        fullDatasets.forEach(function (ds, idx) {
+          if (idx < 2) return;
+          const label = ds.label || ("Asset " + (idx - 1));
+          const wrap  = document.createElement("label");
+          wrap.className = "asset-toggle";
+
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.checked = !datasetHidden[idx];
+          input.dataset.index = String(idx);
+          input.addEventListener("change", function () {
+            const i = parseInt(this.dataset.index, 10);
+            datasetHidden[i] = !this.checked;
+            applyYearWindow();
+          });
+
+          const span = document.createElement("span");
+          span.textContent = label;
+
+          wrap.appendChild(input);
+          wrap.appendChild(span);
+          togglesContainer.appendChild(wrap);
+        });
+
+        const btnWrap = document.createElement("div");
+        btnWrap.className = "asset-toggle-buttons";
+
+        const hideAll = document.createElement("button");
+        hideAll.type = "button";
+        hideAll.textContent = "Hide all assets";
+        hideAll.addEventListener("click", function () {
+          for (let i = 2; i < datasetHidden.length; i++) datasetHidden[i] = true;
+          togglesContainer.querySelectorAll("input[type=checkbox]").forEach(function (c) { c.checked = false; });
+          applyYearWindow();
+        });
+
+        const showAll = document.createElement("button");
+        showAll.type = "button";
+        showAll.textContent = "Show all assets";
+        showAll.addEventListener("click", function () {
+          for (let i = 2; i < datasetHidden.length; i++) datasetHidden[i] = false;
+          togglesContainer.querySelectorAll("input[type=checkbox]").forEach(function (c) { c.checked = true; });
+          applyYearWindow();
+        });
+
+        const resetZoomBtn = document.createElement("button");
+        resetZoomBtn.type = "button";
+        resetZoomBtn.textContent = "Reset zoom";
+        resetZoomBtn.addEventListener("click", function () {
+          if (projectionChart && projectionChart.resetZoom) {
+            projectionChart.resetZoom();
+          }
+          currentStartIndex = 0;
+          currentEndIndex = fullLabels.length ? fullLabels.length - 1 : 0;
+          applyYearWindow();
+        });
+
+        btnWrap.appendChild(hideAll);
+        btnWrap.appendChild(showAll);
+        btnWrap.appendChild(resetZoomBtn);
+        togglesContainer.appendChild(btnWrap);
+      }
+    }
+
+    const finalRow = rows[rows.length - 1];
+
+    if (allocCanvas && assetsMeta && assetsMeta.length && finalRow.balancesByAsset) {
+      const ctx2        = allocCanvas.getContext("2d");
+      const allocLabels = assetsMeta.map(function (a) { return a.name; });
+      const allocData   = finalRow.balancesByAsset;
+      const doughnutData = {
+        labels: allocLabels,
+        datasets: [{
+          data: allocData,
+          backgroundColor: assetColors.slice(0, allocLabels.length),
+          borderWidth: 0
+        }]
+      };
+      const doughnutOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: "bottom",
+            labels: { color: "#f5f5f5", usePointStyle: true }
+          },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                const label = ctx.label || "";
+                const value = ctx.parsed || 0;
+                const arr   = ctx.dataset.data || [];
+                const total = arr.reduce(function (a,b){return a+b;},0);
+                const pct   = total ? ((value/total)*100).toFixed(1) : "0.0";
+                return label + ": $" + formatMoney(value) + " (" + pct + "%)";
+              }
+            }
+          }
+        }
+      };
+
+      if (allocationChart) {
+        allocationChart.data = doughnutData;
+        allocationChart.options = doughnutOptions;
+        allocationChart.update();
+      } else {
+        allocationChart = new Chart(ctx2, { type: "doughnut", data: doughnutData, options: doughnutOptions });
+      }
+    }
+
+    if (incomeCanvas && lastSummary) {
+      const ctx3 = incomeCanvas.getContext("2d");
+      const s    = lastSummary;
+      const incomeData = {
+        labels: ["Reinvested distributions","Net income received","Taxes on income"],
+        datasets: [{
+          data: [s.totalReinvested, s.totalPaidOutNet, s.totalTaxPaid],
+          backgroundColor: ["#4bc0c0","#ef5122","#ffcd56"],
+          borderWidth: 0
+        }]
+      };
+      const incomeOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: "bottom",
+            labels: { color: "#f5f5f5", usePointStyle: true }
+          },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                const label = ctx.label || "";
+                const value = ctx.parsed || 0;
+                const arr   = ctx.dataset.data || [];
+                const total = arr.reduce(function (a,b){return a+b;},0);
+                const pct   = total ? ((value/total)*100).toFixed(1) : "0.0";
+                return label + ": $" + formatMoney(value) + " (" + pct + "%)";
+              }
+            }
+          }
+        }
+      };
+
+      if (incomeChart) {
+        incomeChart.data = incomeData;
+        incomeChart.options = incomeOptions;
+        incomeChart.update();
+      } else {
+        incomeChart = new Chart(ctx3, { type: "doughnut", data: incomeData, options: incomeOptions });
+      }
+    }
   }
 
-  function downloadCSV() {}
+  function downloadCSV() {
+    if (!lastRows || lastRows.length === 0 || !lastSummary) {
+      alert("Please run a calculation first.");
+      return;
+    }
 
-  function downloadPNGFromChart(chart, filename) {}
+    const finalRow = lastRows[lastRows.length - 1];
+    const s = lastSummary;
+
+    let totalDistributions = 0;
+    let totalGrossPayout   = 0;
+    let totalNetPayout     = 0;
+
+    lastRows.forEach(function (row) {
+      totalDistributions += row.yearDist;
+      totalGrossPayout   += row.yearPayoutGross;
+      totalNetPayout     += row.yearPayoutNet;
+    });
+
+    const totalTax        = totalGrossPayout - totalNetPayout;
+    const totalReinvested = totalDistributions - totalGrossPayout;
+
+    const lines = [];
+
+    lines.push("Summary");
+    lines.push("Metric,Value");
+    lines.push("Final total balance,$" + finalRow.totalBalance.toFixed(2));
+    lines.push("Total contributions,$" + finalRow.totalContrib.toFixed(2));
+    lines.push("Total growth,$" + finalRow.growth.toFixed(2));
+
+    if (lastAssetsMeta && lastAssetsMeta.length && finalRow.balancesByAsset) {
+      lastAssetsMeta.forEach(function (asset, index) {
+        const bal = finalRow.balancesByAsset[index] || 0;
+        lines.push("Final balance - " + asset.name + ",$" + bal.toFixed(2));
+      });
+    }
+
+    lines.push("");
+    lines.push("Distributions over entire period (all assets),");
+    lines.push("Total distributions generated,$" + totalDistributions.toFixed(2));
+    lines.push("Total reinvested into assets,$" + totalReinvested.toFixed(2));
+    lines.push("Total income paid out (gross),$" + totalGrossPayout.toFixed(2));
+    lines.push("Total tax on income,$" + totalTax.toFixed(2));
+    lines.push("Total income received (net after tax),$" + totalNetPayout.toFixed(2));
+
+    lines.push("");
+    lines.push("Income run-rate (last year),");
+    lines.push("Gross (before tax),");
+    lines.push("Annual gross,$"    + s.annualGrossIncome.toFixed(2));
+    lines.push("Quarterly gross,$" + s.quarterlyGross.toFixed(2));
+    lines.push("Monthly gross,$"   + s.monthlyGross.toFixed(2));
+    lines.push("Weekly gross,$"    + s.weeklyGross.toFixed(2));
+
+    lines.push("");
+    lines.push("Net (after tax),");
+    lines.push("Annual net,$"    + s.annualNetIncome.toFixed(2));
+    lines.push("Quarterly net,$" + s.quarterlyNet.toFixed(2));
+    lines.push("Monthly net,$"   + s.monthlyNet.toFixed(2));
+    lines.push("Weekly net,$"    + s.weeklyNet.toFixed(2));
+
+    lines.push("");
+    lines.push("Year-by-year breakdown,");
+
+    const header = [
+      "Year",
+      "Total contributions",
+      "Total growth",
+      "Total balance",
+      "Distributions (year)",
+      "Income paid out gross (year)",
+      "Income paid out net (year)",
+      "Cumulative net income (after tax)"
+    ];
+
+    if (lastAssetsMeta && lastAssetsMeta.length) {
+      lastAssetsMeta.forEach(function (asset) {
+        header.push(asset.name + " balance (year end)");
+      });
+    }
+    lines.push(header.join(","));
+
+    let cumulativeNet = 0;
+    lastRows.forEach(function (row) {
+      cumulativeNet += row.yearPayoutNet;
+      const baseCols = [
+        row.year,
+        row.totalContrib.toFixed(2),
+        row.growth.toFixed(2),
+        row.totalBalance.toFixed(2),
+        row.yearDist.toFixed(2),
+        row.yearPayoutGross.toFixed(2),
+        row.yearPayoutNet.toFixed(2),
+        cumulativeNet.toFixed(2)
+      ];
+      const assetCols = [];
+      if (row.balancesByAsset && row.balancesByAsset.length) {
+        row.balancesByAsset.forEach(function (bal) {
+          assetCols.push((bal || 0).toFixed(2));
+        });
+      }
+      lines.push(baseCols.concat(assetCols).join(","));
+    });
+
+    const csvContent = lines.join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "microdca_projection_detailed.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadPNGFromChart(chart, filename) {
+    if (!chart) {
+      alert("Please run a calculation first.");
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = chart.toBase64Image();
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  function downloadProjectionPNG() {
+    downloadPNGFromChart(projectionChart, "microdca_projection_chart.png");
+  }
+
+  function downloadAllocationPNG() {
+    downloadPNGFromChart(allocationChart, "microdca_allocation_chart.png");
+  }
+
+  function downloadIncomePNG() {
+    downloadPNGFromChart(incomeChart, "microdca_income_chart.png");
+  }
 
   document.addEventListener("DOMContentLoaded", function () {
     const assetCountSelect = document.getElementById("assetCount");
     const calcBtn          = document.getElementById("calcBtn");
+    const csvAllBtn        = document.getElementById("csvAllBtn");
+    const mainPngBtn       = document.getElementById("mainPngBtn");
+    const allocPngBtn      = document.getElementById("allocPngBtn");
+    const incomePngBtn     = document.getElementById("incomePngBtn");
 
     if (assetCountSelect) {
       buildAssetRows(parseInt(assetCountSelect.value || "2", 10));
       assetCountSelect.addEventListener("change", function () {
-        buildAssetRows(parseInt(this.value || "1", 10));
+        const count = parseInt(this.value || "1", 10);
+        buildAssetRows(count);
       });
     }
 
-    if (calcBtn) calcBtn.addEventListener("click", calculateProjection);
-  });
+    if (calcBtn)   calcBtn.addEventListener("click", calculateProjection);
+    if (csvAllBtn) csvAllBtn.addEventListener("click", downloadCSV);
 
+    if (mainPngBtn)   mainPngBtn.addEventListener("click", downloadProjectionPNG);
+    if (allocPngBtn)  allocPngBtn.addEventListener("click", downloadAllocationPNG);
+    if (incomePngBtn) incomePngBtn.addEventListener("click", downloadIncomePNG);
+  });
 })();
