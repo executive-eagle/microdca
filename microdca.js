@@ -80,7 +80,7 @@
     const hint = document.createElement("p");
     hint.className = "assets-hint";
     hint.innerHTML =
-      'Tip: Many users set Asset 1 = <strong>Bitcoin</strong> and Asset 2 = <strong>income ETF</strong>, but you can model up to 10 different assets.';
+      'Tip: Many users set Asset 1 = <strong>Bitcoin</strong> and Asset 2 = <strong>income ETF Deniz test</strong>, but you can model up to 10 different assets.';
     container.appendChild(hint);
   }
 
