@@ -1,1 +1,622 @@
+.projection-calc,
+.projection-calc * {
+  box-sizing: border-box;
+}
 
+/* main container */
+.projection-calc {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 1100px;
+  margin: 24px auto 120px;
+  padding: 32px 28px 64px;
+  background: #0a0a0a;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 18px 45px rgba(0,0,0,0.6);
+}
+
+/* basic fields */
+.field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.projection-calc label {
+  font-size: 14px;
+  color: #f5f5f5;
+}
+
+.projection-calc input,
+.projection-calc select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: #050505;
+  color: #f5f5f5;
+  font-size: 14px;
+}
+
+.projection-calc input::placeholder {
+  color: rgba(245,245,245,0.4);
+}
+
+.projection-calc input:focus,
+.projection-calc select:focus {
+  outline: none;
+  border-color: #ef5122;
+  box-shadow: 0 0 0 2px rgba(239,81,34,0.4);
+}
+
+/* buttons */
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.calc-button,
+.csv-button,
+.png-button {
+  padding: 10px 20px;
+  border-radius: 4px;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.calc-button {
+  background: #ef5122;
+  color: #fff;
+}
+
+.calc-button:hover { background: #d84418; }
+
+.csv-button,
+.png-button {
+  background: transparent;
+  color: #ef5122;
+  border: 1px solid #ef5122;
+}
+
+.csv-button:hover,
+.png-button:hover {
+  background: rgba(239,81,34,0.15);
+}
+
+.csv-button.small,
+.png-button.small {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+/* results box */
+.results-box {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: #050505;
+  font-size: 14px;
+  color: #f5f5f5;
+  line-height: 1.5;
+}
+
+/* summary cards (key metrics) */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.summary-card {
+  background: linear-gradient(145deg,#111,#050505);
+  border-radius: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+/* highlight the 2 most important tiles: Final balance + Total net income */
+.summary-card:nth-child(1),
+.summary-card:nth-child(4) {
+  border-color: rgba(239,81,34,0.8);
+  box-shadow: 0 0 18px rgba(239,81,34,0.3);
+  background: radial-gradient(circle at top left, rgba(239,81,34,0.18), #050505);
+}
+
+.summary-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(245,245,245,0.7);
+  margin-bottom: 4px;
+}
+
+.summary-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: #f5f5f5;
+}
+
+.summary-value.primary { color: #ef5122; }
+.summary-value.positive { color: #4caf50; }
+.summary-value.negative { color: #ff5252; }
+
+.summary-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  color: rgba(245,245,245,0.6);
+}
+
+/* sections under the cards */
+.results-section {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.12);
+}
+
+.results-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.results-section h4 {
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+
+.results-section p {
+  margin: 3px 0;
+}
+
+.results-section p strong {
+  font-weight: 600;
+}
+
+/* income subgrid (gross vs net) */
+.income-grid {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.income-heading {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+/* asset list */
+.asset-list {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+  font-size: 14px;
+}
+
+.asset-list li { margin-bottom: 2px; }
+
+/* Year-by-year heading + table */
+.results-heading {
+  margin-top: 18px;
+  margin-bottom: 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 8px;
+}
+
+.projection-table {
+  width: max(900px, 100%);
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.projection-table th,
+.projection-table td {
+  padding: 6px 8px;
+  border: 1px solid rgba(255,255,255,0.12);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.projection-table th:first-child,
+.projection-table td:first-child {
+  text-align: left;
+}
+
+.projection-table thead {
+  background: rgba(255,255,255,0.04);
+}
+
+.table-download-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+/* asset blocks */
+.assets-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #050505;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.asset-row {
+  width: 100%;
+  border-radius: 12px;
+  padding: 12px 14px 14px;
+  margin-bottom: 6px;
+  background: radial-gradient(circle at top left, rgba(239,81,34,0.22), #111);
+  border: 1px solid rgba(239,81,34,0.8);
+  box-shadow: 0 0 22px rgba(239,81,34,0.35);
+}
+
+.asset-row-inner {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr 1.1fr 1.1fr 1.3fr;
+  gap: 10px;
+}
+
+.asset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.asset-card-header {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ff8650;
+}
+
+.asset-card .asset-name {
+  background: #050505;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.22);
+  padding: 8px 10px;
+  color: #f5f5f5;
+  font-size: 14px;
+}
+
+.asset-card .asset-name:focus {
+  border-color: #ffab76;
+  box-shadow: 0 0 0 1px rgba(255,171,118,0.4);
+}
+
+/* =================== CHART SYSTEM =================== */
+
+/* chart container box */
+.chart-box {
+  margin-top: 24px;
+  background: #050505;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 12px 14px 32px;
+  overflow: visible;
+}
+
+/* main line chart container */
+.main-chart {
+  position: relative;
+  width: 100%;
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-bottom: 12px;
+  height: 500px;           /* height on container (prevents squish) */
+}
+
+/* canvases */
+.chart-box canvas {
+  width: 100%;
+  display: block;
+}
+
+/* main chart canvas fills container height */
+.main-chart canvas {
+  height: 100%;
+}
+
+/* donut canvases fill their containers */
+.small-chart canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* donut layout */
+.chart-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.chart-row.pie-chart-block {
+  margin-top: 24px;
+}
+
+/* donut container controls circle size */
+.small-chart {
+  position: relative;
+  flex: 1 1 420px;
+  max-width: 520px;
+  height: 360px;
+  padding-bottom: 90px;
+}
+
+/* chart titles */
+.chart-title {
+  font-size: 14px;
+  margin: 0 0 6px;
+  color: #f5f5f5;
+}
+
+/* year label / range text */
+.chart-range-row {
+  margin-top: 8px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: rgba(245,245,245,0.85);
+}
+
+.year-range-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.range-label,
+.range-display {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+/* mini navigator */
+.navigator-wrapper {
+  position: relative;
+  width: 100%;
+  height: 60px;
+  margin-top: 20px;
+  margin-bottom: 18px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+#navigatorChart {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.nav-range-shade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(239,81,34,0.18);
+  pointer-events: none;
+}
+
+/* navigator draggable handles */
+.nav-handle {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 12px;
+  background: #ff6a3d;
+  border-radius: 3px;
+  cursor: ew-resize;
+  pointer-events: auto;
+  z-index: 5;
+  box-shadow: 0 0 4px rgba(255,106,61,0.7);
+}
+
+/* asset toggles + buttons under main chart */
+.asset-toggle-row {
+  margin-top: 16px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.asset-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #f5f5f5;
+  background: rgba(255,255,255,0.04);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.asset-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.asset-toggle span {
+  white-space: nowrap;
+}
+
+.asset-toggle-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.asset-toggle-buttons button {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid #ef5122;
+  background: transparent;
+  color: #ef5122;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.asset-toggle-buttons button:hover {
+  background: rgba(239,81,34,0.15);
+}
+
+/* hint text under chart (tip text) */
+.legend-hint {
+  margin-top: 8px;
+  margin-bottom: 28px;
+  font-size: 11px;
+  color: rgba(245,245,245,0.7);
+}
+
+/* global overflow guard */
+body {
+  overflow-x: hidden;
+}
+
+.projection-calc,
+.chart-box,
+.table-wrapper {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* =================== RESPONSIVE =================== */
+
+/* tablets / small laptops */
+@media (max-width: 900px) {
+  .projection-calc {
+    padding: 24px 16px 64px;
+  }
+
+  .asset-row-inner {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .summary-grid {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+
+  .small-chart {
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
+
+  .main-chart {
+    height: 420px;
+  }
+}
+
+@media (max-width: 768px) {
+  .asset-toggle-row {
+    margin-top: 12px;
+    margin-bottom: 16px;
+  }
+}
+
+/* phones */
+@media (max-width: 600px) {
+
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-row.pie-chart-block {
+    margin-bottom: 48px !important;
+    gap: 48px !important;
+  }
+
+  .small-chart {
+    height: 300px;
+    margin-bottom: 36px !important;
+    padding-bottom: 100px !important;
+  }
+
+  .small-chart .chart-download-row {
+    margin-bottom: 20px !important;
+  }
+
+  .main-chart {
+    height: 320px;
+    margin-bottom: 120px !important; /* REAL SAFE GAP */
+  }
+
+  .main-chart .chart-download-row {
+    position: relative;
+    z-index: 50;
+    margin-bottom: 140px !important; /* GUARANTEED ABOVE FOOTER */
+  }
+
+  .legend-hint {
+    margin-bottom: 32px !important;
+  }
+
+  .asset-toggle-row {
+    margin-bottom: 40px !important;
+  }
+
+  .chart-box {
+    margin-bottom: 10px;
+    padding-bottom: 20px;
+  }
+
+  /* FIXED FOOTER */
+
+  body,
+  .projection-calc {
+    padding-bottom: calc(180px + env(safe-area-inset-bottom)) !important;
+  }
+
+  footer,
+  .footer,
+  .wf-footer {
+    position: relative !important;
+    margin-top: 24px !important;
+    padding-top: 32px !important;
+    padding-bottom: 56px !important;
+    bottom: env(safe-area-inset-bottom) !important;
+    z-index: 5;
+  }
+
+  footer *,
+  .footer *,
+  .wf-footer * {
+    position: relative;
+    z-index: 5;
+  }
+
+  footer input,
+  footer button,
+  .wf-footer input,
+  .wf-footer button {
+    display: block;
+    width: 100%;
+    margin-top: 16px;
+  }
+}
