@@ -1,3 +1,4 @@
+/* =================== MICRODCA PROJECTION CALCULATOR CSS =================== */
 .projection-calc,
 .projection-calc * {
   box-sizing: border-box;
@@ -298,6 +299,68 @@
 .asset-card .asset-name:focus {
   border-color: #ffab76;
   box-shadow: 0 0 0 1px rgba(255,171,118,0.4);
+}
+
+/* =================== NEW: PER-ASSET ALLOCATION MODE (% vs $) =================== */
+
+.alloc-mode-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.alloc-mode {
+  width: 62px;
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.22);
+  background: #050505;
+  color: #f5f5f5;
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.alloc-mode:focus {
+  outline: none;
+  border-color: #ef5122;
+  box-shadow: 0 0 0 2px rgba(239,81,34,0.35);
+}
+
+.alloc-input-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.alloc-pct-wrap,
+.alloc-usd-wrap {
+  width: 100%;
+}
+
+/* make the allocation inputs match your asset-name styling a bit closer */
+.asset-row .asset-alloc,
+.asset-row .asset-alloc-usd {
+  background: #050505;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.22);
+  padding: 8px 10px;
+  color: #f5f5f5;
+  font-size: 14px;
+}
+
+.asset-row .asset-alloc:focus,
+.asset-row .asset-alloc-usd:focus {
+  outline: none;
+  border-color: #ffab76;
+  box-shadow: 0 0 0 1px rgba(255,171,118,0.4);
+}
+
+/* totals row invalid state (if you use it) */
+.asset-totals-row.invalid {
+  border-color: rgba(255,82,82,0.95) !important;
+  box-shadow: 0 0 16px rgba(255,82,82,0.25) !important;
 }
 
 /* =================== CHART SYSTEM =================== */
@@ -620,35 +683,13 @@ body {
     margin-top: 16px;
   }
 
-.asset-totals-row {
-  margin-top: 10px;
-  padding: 10px 12px;
-  display: grid;
-  grid-template-columns: 2.2fr 1fr 1.1fr 1.1fr 1.3fr;
-  gap: 10px;
-  border-radius: 8px;
-  background: linear-gradient(145deg, #111, #050505);
-  border: 1px solid rgba(239,81,34,0.9);
-  box-shadow: 0 0 16px rgba(239,81,34,0.25);
-  font-size: 13px;
-  align-items: center;
-}
+  /* keep the allocation mode + input from collapsing weirdly on mobile */
+  .alloc-mode-row {
+    gap: 6px;
+  }
 
-.totals-label {
-  font-weight: 700;
-  color: #ef5122;
-  letter-spacing: 0.06em;
-}
-
-.totals-cell {
-  text-align: right;
-  font-weight: 600;
-  color: #f5f5f5;
-}
-
-.asset-totals-row.invalid {
-  border-color: #ff5252;
-  box-shadow: 0 0 18px rgba(255,82,82,0.4);
-}
-  
+  .alloc-mode {
+    width: 58px;
+    padding: 8px 8px;
+  }
 }
