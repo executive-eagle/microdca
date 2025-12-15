@@ -267,9 +267,10 @@
   box-shadow: 0 0 22px rgba(239,81,34,0.35);
 }
 
+/* ✅ UPDATED: match JS grid (5 columns) */
 .asset-row-inner {
   display: grid;
-  grid-template-columns: 2.2fr 1fr 1.1fr 1.1fr 1.3fr;
+  grid-template-columns: 2.2fr 1fr 1fr 1fr 1fr;
   gap: 10px;
 }
 
@@ -301,7 +302,7 @@
   box-shadow: 0 0 0 1px rgba(255,171,118,0.4);
 }
 
-/* =================== NEW: PER-ASSET ALLOCATION MODE (% vs $) =================== */
+/* =================== PER-ASSET ALLOCATION MODE (% vs $) =================== */
 
 .alloc-mode-row {
   display: flex;
@@ -339,9 +340,12 @@
   width: 100%;
 }
 
-/* make the allocation inputs match your asset-name styling a bit closer */
+/* allocation inputs match asset-name styling */
 .asset-row .asset-alloc,
-.asset-row .asset-alloc-usd {
+.asset-row .asset-alloc-usd,
+.asset-row .asset-growth,
+.asset-row .asset-yield,
+.asset-row .asset-reinvest {
   background: #050505;
   border-radius: 6px;
   border: 1px solid rgba(255,255,255,0.22);
@@ -351,21 +355,140 @@
 }
 
 .asset-row .asset-alloc:focus,
-.asset-row .asset-alloc-usd:focus {
+.asset-row .asset-alloc-usd:focus,
+.asset-row .asset-growth:focus,
+.asset-row .asset-yield:focus,
+.asset-row .asset-reinvest:focus {
   outline: none;
   border-color: #ffab76;
   box-shadow: 0 0 0 1px rgba(255,171,118,0.4);
 }
 
-/* totals row invalid state (if you use it) */
+/* =================== ASSET TOTALS ROW + HINT (ADDED) =================== */
+
+.asset-totals-row {
+  margin-top: 14px;
+  padding: 14px 18px;
+  display: grid;
+  grid-template-columns: 2.2fr 1fr 1fr 1fr 1fr;
+  gap: 10px;
+  border-radius: 10px;
+  background: linear-gradient(
+    135deg,
+    rgba(239,81,34,0.18),
+    #050505 45%,
+    #111 100%
+  );
+  border: 1px solid rgba(239,81,34,0.95);
+  box-shadow:
+    0 0 14px rgba(239,81,34,0.35),
+    inset 0 0 0 1px rgba(255,255,255,0.05);
+  font-size: 13.5px;
+  align-items: center;
+}
+
+.totals-label {
+  font-weight: 800;
+  font-size: 12px;
+  color: #ef5122;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.totals-cell {
+  text-align: right;
+  font-weight: 700;
+  color: #f5f5f5;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: 0.02em;
+}
+
+/* totals row invalid state */
 .asset-totals-row.invalid {
   border-color: rgba(255,82,82,0.95) !important;
-  box-shadow: 0 0 16px rgba(255,82,82,0.25) !important;
+  box-shadow:
+    0 0 16px rgba(255,82,82,0.25) !important,
+    inset 0 0 0 1px rgba(255,255,255,0.05) !important;
+}
+
+.assets-hint {
+  margin: 6px 2px 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(245,245,245,0.65);
+}
+
+/* =================== GLOBAL ALLOCATION MODE TOGGLE (ADDED) =================== */
+
+.alloc-mode-block { margin-top: 4px; }
+
+.alloc-mode-toggle {
+  display: inline-flex;
+  gap: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: #050505;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.alloc-mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+  color: rgba(245,245,245,0.92);
+  font-size: 13px;
+  line-height: 1;
+  border-right: 1px solid rgba(255,255,255,0.10);
+}
+
+.alloc-mode-option:last-child { border-right: none; }
+
+.alloc-mode-option input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.28);
+  background: transparent;
+  display: inline-block;
+  position: relative;
+  margin: 0;
+  cursor: pointer;
+}
+
+.alloc-mode-option input:checked {
+  border-color: rgba(239,81,34,0.9);
+  box-shadow: 0 0 0 2px rgba(239,81,34,0.18);
+}
+
+.alloc-mode-option input:checked::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 999px;
+  background: #ef5122;
+}
+
+.alloc-mode-option:has(input:checked) {
+  background: radial-gradient(circle at top left, rgba(239,81,34,0.18), #050505);
+  color: #f5f5f5;
+}
+
+.alloc-mode-help {
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(245,245,245,0.62);
+  line-height: 1.35;
+  max-width: 720px;
 }
 
 /* =================== CHART SYSTEM =================== */
 
-/* chart container box */
 .chart-box {
   margin-top: 24px;
   background: #050505;
@@ -375,7 +498,6 @@
   overflow: visible;
 }
 
-/* main line chart container */
 .main-chart {
   position: relative;
   width: 100%;
@@ -383,21 +505,18 @@
   margin-left: auto;
   margin-right: auto;
   padding-bottom: 12px;
-  height: 500px;           /* height on container (prevents squish) */
+  height: 500px;
 }
 
-/* canvases */
 .chart-box canvas {
   width: 100%;
   display: block;
 }
 
-/* main chart canvas fills container height */
 .main-chart canvas {
   height: 100%;
 }
 
-/* donut canvases fill their containers */
 .small-chart canvas {
   width: 100%;
   height: 100%;
@@ -405,7 +524,6 @@
   display: block;
 }
 
-/* donut layout */
 .chart-row {
   display: flex;
   flex-wrap: wrap;
@@ -417,7 +535,6 @@
   margin-top: 24px;
 }
 
-/* donut container controls circle size */
 .small-chart {
   position: relative;
   flex: 1 1 420px;
@@ -426,14 +543,12 @@
   padding-bottom: 90px;
 }
 
-/* chart titles */
 .chart-title {
   font-size: 14px;
   margin: 0 0 6px;
   color: #f5f5f5;
 }
 
-/* year label / range text */
 .chart-range-row {
   margin-top: 8px;
   margin-bottom: 4px;
@@ -453,14 +568,14 @@
   opacity: 0.9;
 }
 
-/* mini navigator */
+/* ✅ UPDATED: allow dragging handles */
 .navigator-wrapper {
   position: relative;
   width: 100%;
   height: 60px;
   margin-top: 20px;
   margin-bottom: 18px;
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 1;
 }
 
@@ -480,7 +595,6 @@
   pointer-events: none;
 }
 
-/* navigator draggable handles */
 .nav-handle {
   position: absolute;
   top: 2px;
@@ -550,7 +664,6 @@
   background: rgba(239,81,34,0.15);
 }
 
-/* hint text under chart (tip text) */
 .legend-hint {
   margin-top: 8px;
   margin-bottom: 28px;
@@ -572,7 +685,6 @@ body {
 
 /* =================== RESPONSIVE =================== */
 
-/* tablets / small laptops */
 @media (max-width: 900px) {
   .projection-calc {
     padding: 24px 16px 64px;
@@ -603,9 +715,7 @@ body {
   }
 }
 
-/* phones */
 @media (max-width: 600px) {
-
   .summary-grid {
     grid-template-columns: 1fr;
   }
@@ -627,13 +737,13 @@ body {
 
   .main-chart {
     height: 320px;
-    margin-bottom: 120px !important; /* REAL SAFE GAP */
+    margin-bottom: 120px !important;
   }
 
   .main-chart .chart-download-row {
     position: relative;
     z-index: 50;
-    margin-bottom: 140px !important; /* GUARANTEED ABOVE FOOTER */
+    margin-bottom: 140px !important;
   }
 
   .legend-hint {
@@ -648,8 +758,6 @@ body {
     margin-bottom: 10px;
     padding-bottom: 20px;
   }
-
-  /* FIXED FOOTER */
 
   body,
   .projection-calc {
@@ -683,6 +791,39 @@ body {
     margin-top: 16px;
   }
 
+  /* mobile totals row layout */
+  .asset-totals-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    row-gap: 14px;
+    column-gap: 10px;
+    padding: 16px 14px !important;
+    box-sizing: border-box;
+  }
+
+  .asset-totals-row .totals-label {
+    grid-column: 1 / -1;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+
+  .asset-totals-row .totals-cell {
+    width: 100%;
+    min-width: 0;
+    text-align: center;
+  }
+
+  .asset-totals-row .totals-cell > div:first-child {
+    font-size: 16px;
+    white-space: nowrap;
+  }
+
+  .asset-totals-row .totals-cell > div:last-child {
+    font-size: 11px;
+    opacity: 0.65;
+    margin-top: 2px;
+  }
+
   /* keep the allocation mode + input from collapsing weirdly on mobile */
   .alloc-mode-row {
     gap: 6px;
@@ -692,4 +833,8 @@ body {
     width: 58px;
     padding: 8px 8px;
   }
+
+  /* mobile sizing for global toggle */
+  .alloc-mode-toggle { width: 100%; }
+  .alloc-mode-option { flex: 1 1 50%; justify-content: center; }
 }
