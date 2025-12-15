@@ -33,31 +33,76 @@
   }
 
   /* ================================
-     TOTALS ROW CALCULATOR
+     ALLOCATION MODE HELPERS (% vs $)
   ================================= */
-    function updateAssetTotals() {
-    const rows = document.querySelectorAll(".asset-row");
+  function getRowAllocMode(row) {
+    const sel = row.querySelector(".alloc-mode");
+    const v = (sel && sel.value) ? sel.value : "pct";
+    return (v === "usd") ? "usd" : "pct";
+  }
 
-    let allocSum = 0;
+  function syncRowAllocUI(row) {
+    const mode = getRowAllocMode(row);
+    const pctWrap = row.querySelector(".alloc-pct-wrap");
+    const usdWrap = row.querySelector(".alloc-usd-wrap");
+    if (pctWrap) pctWrap.style.display = (mode === "pct") ? "" : "none";
+    if (usdWrap) usdWrap.style.display = (mode === "usd") ? "" : "none";
+  }
+
+  /* ================================
+     TOTALS ROW CALCULATOR (UPDATED)
+  ================================= */
+  function updateAssetTotals() {
+    const rows = Array.from(document.querySelectorAll(".asset-row"));
+
+    let pctSum = 0;
+    let usdSum = 0;
+
+    // First pass: totals
+    rows.forEach(row => {
+      const mode = getRowAllocMode(row);
+      if (mode === "usd") {
+        const usd = parseFloat(row.querySelector(".asset-alloc-usd")?.value || 0);
+        usdSum += (Number.isFinite(usd) && usd > 0) ? usd : 0;
+      } else {
+        const pct = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
+        pctSum += (Number.isFinite(pct) && pct > 0) ? pct : 0;
+      }
+    });
+
+    const remainderPct = Math.max(0, 100 - pctSum);
+
+    // Second pass: weighted averages (weights in % points; $ assets share the remainder)
+    let weightSum = 0;
     let weightedGrowth = 0;
     let weightedYield = 0;
     let weightedReinvest = 0;
 
     rows.forEach(row => {
-        const alloc    = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
-        const growth   = parseFloat(row.querySelector(".asset-growth")?.value || 0);
-        const yieldPct = parseFloat(row.querySelector(".asset-yield")?.value || 0);
-        const reinvest = parseFloat(row.querySelector(".asset-reinvest")?.value || 0);
+      const growth   = parseFloat(row.querySelector(".asset-growth")?.value || 0);
+      const yieldPct = parseFloat(row.querySelector(".asset-yield")?.value || 0);
+      const reinvest = parseFloat(row.querySelector(".asset-reinvest")?.value || 0);
 
-        allocSum         += alloc;
-        weightedGrowth   += growth * alloc;
-        weightedYield    += yieldPct * alloc;
-        weightedReinvest += reinvest * alloc;
+      let w = 0;
+
+      if (getRowAllocMode(row) === "usd") {
+        const usd = parseFloat(row.querySelector(".asset-alloc-usd")?.value || 0);
+        const usdSafe = (Number.isFinite(usd) && usd > 0) ? usd : 0;
+        w = (usdSum > 0) ? (usdSafe / usdSum) * remainderPct : 0;
+      } else {
+        const pct = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
+        w = (Number.isFinite(pct) && pct > 0) ? pct : 0;
+      }
+
+      weightSum += w;
+      weightedGrowth += (Number.isFinite(growth) ? growth : 0) * w;
+      weightedYield += (Number.isFinite(yieldPct) ? yieldPct : 0) * w;
+      weightedReinvest += (Number.isFinite(reinvest) ? reinvest : 0) * w;
     });
 
-    const avgGrowth   = allocSum ? (weightedGrowth / allocSum) : 0;
-    const avgYield    = allocSum ? (weightedYield / allocSum) : 0;
-    const avgReinvest = allocSum ? (weightedReinvest / allocSum) : 0;
+    const avgGrowth   = weightSum ? (weightedGrowth / weightSum) : 0;
+    const avgYield    = weightSum ? (weightedYield / weightSum) : 0;
+    const avgReinvest = weightSum ? (weightedReinvest / weightSum) : 0;
 
     const allocEl  = document.getElementById("totalsAlloc");
     const growthEl = document.getElementById("totalsGrowth");
@@ -67,21 +112,29 @@
 
     if (!allocEl || !growthEl || !yieldEl || !reinvEl || !rowEl) return;
 
-    allocEl.textContent  = allocSum.toFixed(1) + "%";
+    // Display: if you have any $ assets, the effective total target is 100% (pct + remainder)
+    const effectivePctTotal = (usdSum > 0) ? (pctSum + remainderPct) : pctSum;
+
+    allocEl.textContent  = effectivePctTotal.toFixed(1) + "%";
     growthEl.textContent = avgGrowth.toFixed(2) + "%";
     yieldEl.textContent  = avgYield.toFixed(2) + "%";
     reinvEl.textContent  = avgReinvest.toFixed(1) + "%";
 
-    if (Math.abs(allocSum - 100) > 0.05) {
-        rowEl.classList.add("invalid");
-    } else {
-        rowEl.classList.remove("invalid");
-    }
-    }
+    // Validation rules:
+    // 1) % entries cannot exceed 100
+    // 2) If no $ assets, % must total ~100
+    // 3) If there are $ assets, % may be <100 (remainder assigned by $), but cannot be 100 (no remainder)
+    let invalid = false;
+    if (pctSum > 100.0001) invalid = true;
+    if (usdSum <= 0 && Math.abs(pctSum - 100) > 0.05) invalid = true;
+    if (usdSum > 0 && remainderPct <= 0.0001) invalid = true;
 
+    if (invalid) rowEl.classList.add("invalid");
+    else rowEl.classList.remove("invalid");
+  }
 
   /* ================================
-     BUILD ASSET ROWS + TOTALS + TIP
+     BUILD ASSET ROWS + TOTALS + TIP (UPDATED)
   ================================= */
   function buildAssetRows(count) {
     const container = document.getElementById("assetsContainer");
@@ -104,11 +157,25 @@
       + (index === 1 ? 'Bitcoin' : (index === 2 ? 'Income ETF' : 'Asset ' + index))
       + '" />'
       + '  </div>'
+
+      // Allocation field with per-asset mode selector
       + '  <div class="asset-field">'
-      + '    <label>Allocation (%)</label>'
-      + '    <input type="number" class="asset-alloc" min="0" max="100" step="0.1" value="'
+      + '    <label>Allocation</label>'
+      + '    <div class="alloc-mode-row">'
+      + '      <select class="alloc-mode" aria-label="Allocation mode">'
+      + '        <option value="pct" selected>%</option>'
+      + '        <option value="usd">$</option>'
+      + '      </select>'
+      + '      <div class="alloc-input-wrap alloc-pct-wrap">'
+      + '        <input type="number" class="asset-alloc" min="0" max="100" step="0.1" value="'
       + equalAlloc.toFixed(1) + '" />'
+      + '      </div>'
+      + '      <div class="alloc-input-wrap alloc-usd-wrap" style="display:none">'
+      + '        <input type="number" class="asset-alloc-usd" min="0" step="0.01" placeholder="0" value="0" />'
+      + '      </div>'
+      + '    </div>'
       + '  </div>'
+
       + '  <div class="asset-field">'
       + '    <label>Annual growth (%)</label>'
       + '    <input type="number" class="asset-growth" step="0.1" value="'
@@ -126,6 +193,16 @@
       + '</div>';
 
       container.appendChild(row);
+
+      // Per-row UI behavior
+      const modeSel = row.querySelector(".alloc-mode");
+      if (modeSel) {
+        modeSel.addEventListener("change", () => {
+          syncRowAllocUI(row);
+          updateAssetTotals();
+        });
+      }
+      syncRowAllocUI(row);
     }
 
     // TOTALS ROW
@@ -161,20 +238,20 @@
     const hint = document.createElement("p");
     hint.className = "assets-hint";
     hint.innerHTML =
-      'Tip: Many users set Asset 1 = <strong>Bitcoin</strong> and Asset 2 = <strong>income ETF</strong>, but you can model up to 10 different assets.';
+      'Tip: You can set Allocation by <strong>%</strong> or by <strong>$</strong> per asset. If you use $ on any asset, the remaining percent (100% minus your % entries) is distributed across $ assets in proportion to their $ amounts.';
     container.appendChild(hint);
 
     // Wire totals updates
     setTimeout(() => {
-      container.querySelectorAll(".asset-row input").forEach(input => {
-        input.addEventListener("input", updateAssetTotals);
+      container.querySelectorAll(".asset-row input, .asset-row select").forEach(el => {
+        el.addEventListener("input", updateAssetTotals);
       });
       updateAssetTotals();
     }, 0);
   }
 
   /* ================================
-     CORE CALCULATION
+     CORE CALCULATION (UPDATED ALLOCATION)
   ================================= */
   function calculateProjection() {
     const startBalance = parseFloat(document.getElementById("startBalance").value || 0);
@@ -196,27 +273,75 @@
       return;
     }
 
-    const assetRows = document.querySelectorAll(".asset-row");
+    const assetRows = Array.from(document.querySelectorAll(".asset-row"));
     if (!assetRows.length) {
       alert("Please add at least one asset.");
       return;
     }
 
+    // Pass 1: allocation sums
+    let pctSum = 0;
+    let usdSum = 0;
+
+    assetRows.forEach(row => {
+      const mode = getRowAllocMode(row);
+      if (mode === "usd") {
+        const usd = parseFloat(row.querySelector(".asset-alloc-usd")?.value || 0);
+        usdSum += (Number.isFinite(usd) && usd > 0) ? usd : 0;
+      } else {
+        const pct = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
+        pctSum += (Number.isFinite(pct) && pct > 0) ? pct : 0;
+      }
+    });
+
+    if (pctSum > 100.0001) {
+      alert("Allocation % entries cannot exceed 100%.");
+      return;
+    }
+
+    if (pctSum <= 0 && usdSum <= 0) {
+      alert("Please give at least one asset a positive allocation.");
+      return;
+    }
+
+    const remainderPct = Math.max(0, 100 - pctSum);
+
+    // If no $ assets, require % totals ~100 (old behavior)
+    if (usdSum <= 0 && Math.abs(pctSum - 100) > 0.05) {
+      alert("Your allocation % must total 100% (or switch one or more assets to $ allocation).");
+      return;
+    }
+
+    // If there are $ assets, there must be some remainder to allocate
+    if (usdSum > 0 && remainderPct <= 0.0001) {
+      alert("You set at least one asset to $ allocation, but your % allocations already total 100%. Reduce % allocations to leave a remainder for $ assets.");
+      return;
+    }
+
     const assets = [];
-    let allocSum = 0;
 
     assetRows.forEach(function (row, idx) {
       const name = (row.querySelector(".asset-name").value || "").trim() || ("Asset " + (idx + 1));
-      const allocPct = parseFloat(row.querySelector(".asset-alloc").value || 0);
+
       const growthPct = parseFloat(row.querySelector(".asset-growth").value || 0);
       const yieldPct = parseFloat(row.querySelector(".asset-yield").value || 0);
       const reinvestPctInput = parseFloat(row.querySelector(".asset-reinvest").value || 0);
 
-      allocSum += isNaN(allocPct) ? 0 : allocPct;
+      let allocFrac = 0;
+
+      if (getRowAllocMode(row) === "usd") {
+        const usd = parseFloat(row.querySelector(".asset-alloc-usd")?.value || 0);
+        const usdSafe = (Number.isFinite(usd) && usd > 0) ? usd : 0;
+        allocFrac = (usdSum > 0) ? (usdSafe / usdSum) * (remainderPct / 100) : 0;
+      } else {
+        const pct = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
+        const pctSafe = (Number.isFinite(pct) && pct > 0) ? pct : 0;
+        allocFrac = (usdSum > 0) ? (pctSafe / 100) : (pctSafe / Math.max(pctSum, 1e-9));
+      }
 
       assets.push({
         name: name,
-        allocPct: isNaN(allocPct) ? 0 : allocPct,
+        allocFrac: allocFrac,
         growthPct: isNaN(growthPct) ? 0 : growthPct,
         yieldPct: isNaN(yieldPct) ? 0 : yieldPct,
         reinvestFrac: Math.min(Math.max((isNaN(reinvestPctInput) ? 0 : reinvestPctInput) / 100, 0), 1),
@@ -224,12 +349,13 @@
       });
     });
 
-    if (allocSum <= 0) {
-      alert("Please give at least one asset a positive allocation.");
+    // Defensive normalization (handles rounding)
+    const allocFracSum = assets.reduce((s, a) => s + a.allocFrac, 0);
+    if (allocFracSum <= 0) {
+      alert("Allocation results in zero effective weight. Please adjust your % and/or $ entries.");
       return;
     }
-
-    assets.forEach(function (a) { a.allocFrac = a.allocPct / allocSum; });
+    assets.forEach(a => { a.allocFrac = a.allocFrac / allocFracSum; });
 
     const compStepsMap = { daily: 365, monthly: 12, quarterly: 4, yearly: 1 };
     const stepsPerYear = compStepsMap[compFreq] || 12;
