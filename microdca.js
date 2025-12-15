@@ -1,9 +1,7 @@
 (function () {
   function formatMoney(x) {
-    return x.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    });
+    const n = Number(x) || 0;
+    return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
   let lastRows = [];
@@ -18,7 +16,7 @@
   let fullDatasets = [];
   let datasetHidden = [];
   let currentStartIndex = 0;
-  let currentEndIndex   = 0;
+  let currentEndIndex = 0;
 
   let yearRangeLabelSpan = null;
   let navWrapper = null;
@@ -33,108 +31,119 @@
   }
 
   /* ================================
-     ALLOCATION MODE HELPERS (% vs $)
+     GLOBAL ALLOCATION MODE (% vs $)
   ================================= */
-  function getRowAllocMode(row) {
-    const sel = row.querySelector(".alloc-mode");
-    const v = (sel && sel.value) ? sel.value : "pct";
-    return (v === "usd") ? "usd" : "pct";
+  function getGlobalAllocMode() {
+    const pct = document.getElementById("allocModePct");
+    const usd = document.getElementById("allocModeUsd");
+    if (usd && usd.checked) return "usd";
+    if (pct && pct.checked) return "pct";
+    return "pct"; // default
   }
 
-  function syncRowAllocUI(row) {
-    const mode = getRowAllocMode(row);
-    const pctWrap = row.querySelector(".alloc-pct-wrap");
-    const usdWrap = row.querySelector(".alloc-usd-wrap");
-    if (pctWrap) pctWrap.style.display = (mode === "pct") ? "" : "none";
-    if (usdWrap) usdWrap.style.display = (mode === "usd") ? "" : "none";
+  function syncAllAllocUI() {
+    const mode = getGlobalAllocMode();
+    const rows = Array.from(document.querySelectorAll(".asset-row"));
+
+    rows.forEach(row => {
+      const pctWrap = row.querySelector(".alloc-pct-wrap");
+      const usdWrap = row.querySelector(".alloc-usd-wrap");
+      if (pctWrap) pctWrap.style.display = (mode === "pct") ? "" : "none";
+      if (usdWrap) usdWrap.style.display = (mode === "usd") ? "" : "none";
+    });
+
+    // update totals subtitle + value formatting
+    const allocSub = document.getElementById("totalsAllocSub");
+    if (allocSub) {
+      allocSub.textContent = (mode === "usd") ? "Total $ Allocation" : "Total Allocation";
+    }
   }
 
   /* ================================
-     TOTALS ROW CALCULATOR (UPDATED)
+     TOTALS ROW CALCULATOR (GLOBAL MODE)
   ================================= */
   function updateAssetTotals() {
+    const mode = getGlobalAllocMode();
     const rows = Array.from(document.querySelectorAll(".asset-row"));
 
     let pctSum = 0;
     let usdSum = 0;
 
-    // First pass: totals
-    rows.forEach(row => {
-      const mode = getRowAllocMode(row);
-      if (mode === "usd") {
+    if (mode === "usd") {
+      rows.forEach(row => {
         const usd = parseFloat(row.querySelector(".asset-alloc-usd")?.value || 0);
         usdSum += (Number.isFinite(usd) && usd > 0) ? usd : 0;
-      } else {
+      });
+    } else {
+      rows.forEach(row => {
         const pct = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
         pctSum += (Number.isFinite(pct) && pct > 0) ? pct : 0;
-      }
-    });
+      });
+    }
 
-    const remainderPct = Math.max(0, 100 - pctSum);
-
-    // Second pass: weighted averages (weights in % points; $ assets share the remainder)
+    // Weighted averages (weights depend on mode)
     let weightSum = 0;
     let weightedGrowth = 0;
     let weightedYield = 0;
     let weightedReinvest = 0;
 
     rows.forEach(row => {
-      const growth   = parseFloat(row.querySelector(".asset-growth")?.value || 0);
-      const yieldPct = parseFloat(row.querySelector(".asset-yield")?.value || 0);
+      const growth = parseFloat(row.querySelector(".asset-growth")?.value || 0);
+      const yld = parseFloat(row.querySelector(".asset-yield")?.value || 0);
       const reinvest = parseFloat(row.querySelector(".asset-reinvest")?.value || 0);
 
       let w = 0;
-
-      if (getRowAllocMode(row) === "usd") {
+      if (mode === "usd") {
         const usd = parseFloat(row.querySelector(".asset-alloc-usd")?.value || 0);
         const usdSafe = (Number.isFinite(usd) && usd > 0) ? usd : 0;
-        w = (usdSum > 0) ? (usdSafe / usdSum) * remainderPct : 0;
+        w = usdSafe; // weight by dollars
       } else {
         const pct = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
-        w = (Number.isFinite(pct) && pct > 0) ? pct : 0;
+        const pctSafe = (Number.isFinite(pct) && pct > 0) ? pct : 0;
+        w = pctSafe; // weight by percent points
       }
 
       weightSum += w;
       weightedGrowth += (Number.isFinite(growth) ? growth : 0) * w;
-      weightedYield += (Number.isFinite(yieldPct) ? yieldPct : 0) * w;
+      weightedYield += (Number.isFinite(yld) ? yld : 0) * w;
       weightedReinvest += (Number.isFinite(reinvest) ? reinvest : 0) * w;
     });
 
-    const avgGrowth   = weightSum ? (weightedGrowth / weightSum) : 0;
-    const avgYield    = weightSum ? (weightedYield / weightSum) : 0;
+    const avgGrowth = weightSum ? (weightedGrowth / weightSum) : 0;
+    const avgYield = weightSum ? (weightedYield / weightSum) : 0;
     const avgReinvest = weightSum ? (weightedReinvest / weightSum) : 0;
 
-    const allocEl  = document.getElementById("totalsAlloc");
+    const allocEl = document.getElementById("totalsAlloc");
     const growthEl = document.getElementById("totalsGrowth");
-    const yieldEl  = document.getElementById("totalsYield");
-    const reinvEl  = document.getElementById("totalsReinvest");
-    const rowEl    = document.getElementById("assetTotalsRow");
-
+    const yieldEl = document.getElementById("totalsYield");
+    const reinvEl = document.getElementById("totalsReinvest");
+    const rowEl = document.getElementById("assetTotalsRow");
     if (!allocEl || !growthEl || !yieldEl || !reinvEl || !rowEl) return;
 
-    // Display: if you have any $ assets, the effective total target is 100% (pct + remainder)
-    const effectivePctTotal = (usdSum > 0) ? (pctSum + remainderPct) : pctSum;
-
-    allocEl.textContent  = effectivePctTotal.toFixed(1) + "%";
+    if (mode === "usd") {
+      allocEl.textContent = "$" + formatMoney(usdSum);
+    } else {
+      allocEl.textContent = pctSum.toFixed(1) + "%";
+    }
     growthEl.textContent = avgGrowth.toFixed(2) + "%";
-    yieldEl.textContent  = avgYield.toFixed(2) + "%";
-    reinvEl.textContent  = avgReinvest.toFixed(1) + "%";
+    yieldEl.textContent = avgYield.toFixed(2) + "%";
+    reinvEl.textContent = avgReinvest.toFixed(1) + "%";
 
-    // Validation rules:
-    // 1) % entries cannot exceed 100
-    // 2) If no $ assets, % must total ~100
-    // 3) If there are $ assets, % may be <100 (remainder assigned by $), but cannot be 100 (no remainder)
+    // Validation rules by mode
     let invalid = false;
-    if (pctSum > 100.0001) invalid = true;
-    if (usdSum <= 0 && Math.abs(pctSum - 100) > 0.05) invalid = true;
-    if (usdSum > 0 && remainderPct <= 0.0001) invalid = true;
+    if (mode === "pct") {
+      if (pctSum > 100.0001) invalid = true;
+      if (Math.abs(pctSum - 100) > 0.05) invalid = true;
+    } else {
+      if (usdSum <= 0.0001) invalid = true;
+    }
 
     if (invalid) rowEl.classList.add("invalid");
     else rowEl.classList.remove("invalid");
   }
 
   /* ================================
-     BUILD ASSET ROWS + TOTALS + TIP (UPDATED)
+     BUILD ASSET ROWS + TOTALS + TIP (GLOBAL MODE)
   ================================= */
   function buildAssetRows(count) {
     const container = document.getElementById("assetsContainer");
@@ -151,58 +160,43 @@
 
       row.innerHTML =
         '<div class="asset-row-inner">'
-      + '  <div class="asset-card">'
-      + '    <div class="asset-card-header">Asset ' + index + ' name</div>'
-      + '    <input type="text" class="asset-name" placeholder="'
-      + (index === 1 ? 'Bitcoin' : (index === 2 ? 'Income ETF' : 'Asset ' + index))
-      + '" />'
-      + '  </div>'
+        + '  <div class="asset-card">'
+        + '    <div class="asset-card-header">Asset ' + index + ' name</div>'
+        + '    <input type="text" class="asset-name" placeholder="'
+        + (index === 1 ? 'Bitcoin' : (index === 2 ? 'Income ETF' : 'Asset ' + index))
+        + '" />'
+        + '  </div>'
 
-      // Allocation field with per-asset mode selector
-      + '  <div class="asset-field">'
-      + '    <label>Allocation</label>'
-      + '    <div class="alloc-mode-row">'
-      + '      <select class="alloc-mode" aria-label="Allocation mode">'
-      + '        <option value="pct" selected>%</option>'
-      + '        <option value="usd">$</option>'
-      + '      </select>'
-      + '      <div class="alloc-input-wrap alloc-pct-wrap">'
-      + '        <input type="number" class="asset-alloc" min="0" max="100" step="0.1" value="'
-      + equalAlloc.toFixed(1) + '" />'
-      + '      </div>'
-      + '      <div class="alloc-input-wrap alloc-usd-wrap" style="display:none">'
-      + '        <input type="number" class="asset-alloc-usd" min="0" step="0.01" placeholder="0" value="0" />'
-      + '      </div>'
-      + '    </div>'
-      + '  </div>'
+        + '  <div class="asset-field">'
+        + '    <label>Allocation</label>'
+        + '    <div class="alloc-mode-row">'
+        + '      <div class="alloc-input-wrap alloc-pct-wrap">'
+        + '        <input type="number" class="asset-alloc" min="0" max="100" step="0.1" value="'
+        + equalAlloc.toFixed(1) + '" />'
+        + '      </div>'
+        + '      <div class="alloc-input-wrap alloc-usd-wrap" style="display:none">'
+        + '        <input type="number" class="asset-alloc-usd" min="0" step="0.01" placeholder="0" value="0" />'
+        + '      </div>'
+        + '    </div>'
+        + '  </div>'
 
-      + '  <div class="asset-field">'
-      + '    <label>Annual growth (%)</label>'
-      + '    <input type="number" class="asset-growth" step="0.1" value="'
-      + (index === 1 ? 15 : 8) + '" />'
-      + '  </div>'
-      + '  <div class="asset-field">'
-      + '    <label>Distribution yield (%)</label>'
-      + '    <input type="number" class="asset-yield" step="0.1" value="'
-      + (index === 2 ? 8 : 0) + '" />'
-      + '  </div>'
-      + '  <div class="asset-field">'
-      + '    <label>Reinvest % of distributions</label>'
-      + '    <input type="number" class="asset-reinvest" min="0" max="100" step="1" value="50" />'
-      + '  </div>'
-      + '</div>';
+        + '  <div class="asset-field">'
+        + '    <label>Annual growth (%)</label>'
+        + '    <input type="number" class="asset-growth" step="0.1" value="'
+        + (index === 1 ? 15 : 8) + '" />'
+        + '  </div>'
+        + '  <div class="asset-field">'
+        + '    <label>Distribution yield (%)</label>'
+        + '    <input type="number" class="asset-yield" step="0.1" value="'
+        + (index === 2 ? 8 : 0) + '" />'
+        + '  </div>'
+        + '  <div class="asset-field">'
+        + '    <label>Reinvest % of distributions</label>'
+        + '    <input type="number" class="asset-reinvest" min="0" max="100" step="1" value="50" />'
+        + '  </div>'
+        + '</div>';
 
       container.appendChild(row);
-
-      // Per-row UI behavior
-      const modeSel = row.querySelector(".alloc-mode");
-      if (modeSel) {
-        modeSel.addEventListener("change", () => {
-          syncRowAllocUI(row);
-          updateAssetTotals();
-        });
-      }
-      syncRowAllocUI(row);
     }
 
     // TOTALS ROW
@@ -212,25 +206,25 @@
     totalsRow.innerHTML = `
       <div class="totals-label">TOTALS</div>
 
-        <div class="totals-cell">
-            <div id="totalsAlloc">0%</div>
-            <div style="opacity:.65;font-size:11px">Total Allocation</div>
-        </div>
+      <div class="totals-cell">
+        <div id="totalsAlloc">0%</div>
+        <div id="totalsAllocSub" style="opacity:.65;font-size:11px">Total Allocation</div>
+      </div>
 
-        <div class="totals-cell">
-            <div id="totalsGrowth">0%</div>
-            <div style="opacity:.65;font-size:11px">Avg Growth</div>
-        </div>
+      <div class="totals-cell">
+        <div id="totalsGrowth">0%</div>
+        <div style="opacity:.65;font-size:11px">Avg Growth</div>
+      </div>
 
-        <div class="totals-cell">
-            <div id="totalsYield">0%</div>
-            <div style="opacity:.65;font-size:11px">Avg Yield</div>
-        </div>
+      <div class="totals-cell">
+        <div id="totalsYield">0%</div>
+        <div style="opacity:.65;font-size:11px">Avg Yield</div>
+      </div>
 
-        <div class="totals-cell">
-            <div id="totalsReinvest">0%</div>
-            <div style="opacity:.65;font-size:11px">Avg Reinvest</div>
-        </div>
+      <div class="totals-cell">
+        <div id="totalsReinvest">0%</div>
+        <div style="opacity:.65;font-size:11px">Avg Reinvest</div>
+      </div>
     `;
     container.appendChild(totalsRow);
 
@@ -238,22 +232,26 @@
     const hint = document.createElement("p");
     hint.className = "assets-hint";
     hint.innerHTML =
-      'Tip: You can set Allocation by <strong>%</strong> or by <strong>$</strong> per asset. If you use $ on any asset, the remaining percent (100% minus your % entries) is distributed across $ assets in proportion to their $ amounts.';
+      'Tip: Use the global Allocation mode to set all assets by <strong>%</strong> or by <strong>$</strong>. '
+      + 'In <strong>$</strong> mode, weights are based on your dollar entries.';
     container.appendChild(hint);
 
     // Wire totals updates
     setTimeout(() => {
-      container.querySelectorAll(".asset-row input, .asset-row select").forEach(el => {
+      container.querySelectorAll(".asset-row input").forEach(el => {
         el.addEventListener("input", updateAssetTotals);
       });
+      syncAllAllocUI();
       updateAssetTotals();
     }, 0);
   }
 
   /* ================================
-     CORE CALCULATION (UPDATED ALLOCATION)
+     CORE CALCULATION (GLOBAL ALLOCATION)
   ================================= */
   function calculateProjection() {
+    const mode = getGlobalAllocMode();
+
     const startBalance = parseFloat(document.getElementById("startBalance").value || 0);
     const contributionAmount = parseFloat(document.getElementById("contributionAmount").value || 0);
     const contributionFreq = document.getElementById("contributionFreq").value;
@@ -279,43 +277,32 @@
       return;
     }
 
-    // Pass 1: allocation sums
+    // Validate allocation totals per mode
     let pctSum = 0;
     let usdSum = 0;
 
-    assetRows.forEach(row => {
-      const mode = getRowAllocMode(row);
-      if (mode === "usd") {
+    if (mode === "usd") {
+      assetRows.forEach(row => {
         const usd = parseFloat(row.querySelector(".asset-alloc-usd")?.value || 0);
         usdSum += (Number.isFinite(usd) && usd > 0) ? usd : 0;
-      } else {
+      });
+      if (usdSum <= 0.0001) {
+        alert("In $ allocation mode, please enter a positive $ amount for at least one asset.");
+        return;
+      }
+    } else {
+      assetRows.forEach(row => {
         const pct = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
         pctSum += (Number.isFinite(pct) && pct > 0) ? pct : 0;
+      });
+      if (pctSum > 100.0001) {
+        alert("Allocation % entries cannot exceed 100%.");
+        return;
       }
-    });
-
-    if (pctSum > 100.0001) {
-      alert("Allocation % entries cannot exceed 100%.");
-      return;
-    }
-
-    if (pctSum <= 0 && usdSum <= 0) {
-      alert("Please give at least one asset a positive allocation.");
-      return;
-    }
-
-    const remainderPct = Math.max(0, 100 - pctSum);
-
-    // If no $ assets, require % totals ~100 (old behavior)
-    if (usdSum <= 0 && Math.abs(pctSum - 100) > 0.05) {
-      alert("Your allocation % must total 100% (or switch one or more assets to $ allocation).");
-      return;
-    }
-
-    // If there are $ assets, there must be some remainder to allocate
-    if (usdSum > 0 && remainderPct <= 0.0001) {
-      alert("You set at least one asset to $ allocation, but your % allocations already total 100%. Reduce % allocations to leave a remainder for $ assets.");
-      return;
+      if (Math.abs(pctSum - 100) > 0.05) {
+        alert("In % allocation mode, your allocations must total 100%.");
+        return;
+      }
     }
 
     const assets = [];
@@ -329,14 +316,14 @@
 
       let allocFrac = 0;
 
-      if (getRowAllocMode(row) === "usd") {
+      if (mode === "usd") {
         const usd = parseFloat(row.querySelector(".asset-alloc-usd")?.value || 0);
         const usdSafe = (Number.isFinite(usd) && usd > 0) ? usd : 0;
-        allocFrac = (usdSum > 0) ? (usdSafe / usdSum) * (remainderPct / 100) : 0;
+        allocFrac = usdSafe / usdSum;
       } else {
         const pct = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
         const pctSafe = (Number.isFinite(pct) && pct > 0) ? pct : 0;
-        allocFrac = (usdSum > 0) ? (pctSafe / 100) : (pctSafe / Math.max(pctSum, 1e-9));
+        allocFrac = pctSafe / 100;
       }
 
       assets.push({
@@ -349,10 +336,10 @@
       });
     });
 
-    // Defensive normalization (handles rounding)
+    // Defensive normalization
     const allocFracSum = assets.reduce((s, a) => s + a.allocFrac, 0);
     if (allocFracSum <= 0) {
-      alert("Allocation results in zero effective weight. Please adjust your % and/or $ entries.");
+      alert("Allocation results in zero effective weight. Please adjust your entries.");
       return;
     }
     assets.forEach(a => { a.allocFrac = a.allocFrac / allocFracSum; });
@@ -365,10 +352,10 @@
     switch (contributionFreq) {
       case "daily365": annualContribution = contributionAmount * 365; break;
       case "daily251": annualContribution = contributionAmount * 251; break;
-      case "weekly":   annualContribution = contributionAmount * 52;  break;
-      case "monthly":  annualContribution = contributionAmount * 12;  break;
-      case "yearly":   annualContribution = contributionAmount;       break;
-      default:         annualContribution = contributionAmount * 12;
+      case "weekly": annualContribution = contributionAmount * 52; break;
+      case "monthly": annualContribution = contributionAmount * 12; break;
+      case "yearly": annualContribution = contributionAmount; break;
+      default: annualContribution = contributionAmount * 12;
     }
     const stepContribution = annualContribution / stepsPerYear;
 
@@ -377,18 +364,18 @@
 
     assets.forEach(function (a) {
       a.growthPerStep = a.growthPct / 100 / stepsPerYear;
-      a.yieldPerStep  = a.yieldPct  / 100 / stepsPerYear;
+      a.yieldPerStep = a.yieldPct / 100 / stepsPerYear;
     });
 
     let totalDistributions = 0;
-    let totalReinvested   = 0;
+    let totalReinvested = 0;
     let totalPaidOutGross = 0;
-    let totalPaidOutNet   = 0;
-    let totalTaxPaid      = 0;
+    let totalPaidOutNet = 0;
+    let totalTaxPaid = 0;
 
-    let yearDistTotal        = 0;
+    let yearDistTotal = 0;
     let yearPayoutGrossTotal = 0;
-    let yearPayoutNetTotal   = 0;
+    let yearPayoutNetTotal = 0;
 
     lastRows = [];
 
@@ -402,23 +389,23 @@
 
         const distThisStep = a.balance * a.yieldPerStep;
         if (distThisStep > 0) {
-          const reinvestAmount    = distThisStep * a.reinvestFrac;
+          const reinvestAmount = distThisStep * a.reinvestFrac;
           const payoutAmountGross = distThisStep - reinvestAmount;
 
-          const taxThisStep       = payoutAmountGross * taxFrac;
-          const payoutAmountNet   = payoutAmountGross - taxThisStep;
+          const taxThisStep = payoutAmountGross * taxFrac;
+          const payoutAmountNet = payoutAmountGross - taxThisStep;
 
           a.balance += reinvestAmount;
 
           totalDistributions += distThisStep;
-          totalReinvested   += reinvestAmount;
+          totalReinvested += reinvestAmount;
           totalPaidOutGross += payoutAmountGross;
-          totalPaidOutNet   += payoutAmountNet;
-          totalTaxPaid      += taxThisStep;
+          totalPaidOutNet += payoutAmountNet;
+          totalTaxPaid += taxThisStep;
 
-          yearDistTotal        += distThisStep;
+          yearDistTotal += distThisStep;
           yearPayoutGrossTotal += payoutAmountGross;
-          yearPayoutNetTotal   += payoutAmountNet;
+          yearPayoutNetTotal += payoutAmountNet;
         }
       });
 
@@ -429,8 +416,8 @@
           assets.forEach(function (a) { a.balance *= 1 - correctionDropFrac; });
         }
 
-        const totalBalance    = assets.reduce(function (sum, a) { return sum + a.balance; }, 0);
-        const growth          = totalBalance - totalContrib;
+        const totalBalance = assets.reduce(function (sum, a) { return sum + a.balance; }, 0);
+        const growth = totalBalance - totalContrib;
         const balancesByAsset = assets.map(function (a) { return a.balance; });
 
         lastRows.push({
@@ -444,9 +431,9 @@
           balancesByAsset: balancesByAsset
         });
 
-        yearDistTotal        = 0;
+        yearDistTotal = 0;
         yearPayoutGrossTotal = 0;
-        yearPayoutNetTotal   = 0;
+        yearPayoutNetTotal = 0;
       }
     }
 
@@ -454,16 +441,16 @@
     const finalRow = lastRows[lastRows.length - 1];
     const resultsDiv = document.getElementById("results");
 
-    const finalBalance      = finalRow.totalBalance;
+    const finalBalance = finalRow.totalBalance;
     const annualGrossIncome = finalRow.yearPayoutGross;
-    const annualNetIncome   = finalRow.yearPayoutNet;
+    const annualNetIncome = finalRow.yearPayoutNet;
 
-    const weeklyGross    = annualGrossIncome / 52;
-    const monthlyGross   = annualGrossIncome / 12;
+    const weeklyGross = annualGrossIncome / 52;
+    const monthlyGross = annualGrossIncome / 12;
     const quarterlyGross = annualGrossIncome / 4;
 
-    const weeklyNet    = annualNetIncome / 52;
-    const monthlyNet   = annualNetIncome / 12;
+    const weeklyNet = annualNetIncome / 52;
+    const monthlyNet = annualNetIncome / 12;
     const quarterlyNet = annualNetIncome / 4;
 
     lastSummary = {
@@ -540,14 +527,14 @@
     lastRows.forEach(function (row) {
       tableHtml +=
         '<tr>'
-      + '<td>' + row.year + '</td>'
-      + '<td>$' + formatMoney(row.totalContrib) + '</td>'
-      + '<td>$' + formatMoney(row.growth) + '</td>'
-      + '<td>$' + formatMoney(row.totalBalance) + '</td>'
-      + '<td>$' + formatMoney(row.yearDist) + '</td>'
-      + '<td>$' + formatMoney(row.yearPayoutGross) + '</td>'
-      + '<td>$' + formatMoney(row.yearPayoutNet) + '</td>'
-      + '</tr>';
+        + '<td>' + row.year + '</td>'
+        + '<td>$' + formatMoney(row.totalContrib) + '</td>'
+        + '<td>$' + formatMoney(row.growth) + '</td>'
+        + '<td>$' + formatMoney(row.totalBalance) + '</td>'
+        + '<td>$' + formatMoney(row.yearDist) + '</td>'
+        + '<td>$' + formatMoney(row.yearPayoutGross) + '</td>'
+        + '<td>$' + formatMoney(row.yearPayoutNet) + '</td>'
+        + '</tr>';
     });
 
     tableHtml +=
@@ -562,7 +549,7 @@
       summaryCards
       + '<div class="results-section">'
       + '  <h4>Final balances by asset</h4>'
-      +     assetListHtml
+      + assetListHtml
       + '</div>'
       + '<div class="results-section">'
       + '  <h4>Distributions over entire period (all assets)</h4>'
@@ -595,9 +582,7 @@
     resultsDiv.innerHTML = summaryHtml + tableHtml;
 
     const tableCsvBtn = document.getElementById("tableCsvBtn");
-    if (tableCsvBtn) {
-      tableCsvBtn.addEventListener("click", downloadCSV);
-    }
+    if (tableCsvBtn) tableCsvBtn.addEventListener("click", downloadCSV);
 
     updateCharts(lastRows, assets);
   }
@@ -616,11 +601,11 @@
     if (!navWrapper || !navHandleStart || !navHandleEnd || !navRangeShade || !fullLabels.length) return;
     const maxIndex = fullLabels.length - 1 || 1;
     const startPct = (currentStartIndex / maxIndex) * 100;
-    const endPct   = (currentEndIndex / maxIndex) * 100;
+    const endPct = (currentEndIndex / maxIndex) * 100;
 
     navHandleStart.style.left = startPct + "%";
-    navHandleEnd.style.left   = endPct + "%";
-    navRangeShade.style.left  = startPct + "%";
+    navHandleEnd.style.left = endPct + "%";
+    navRangeShade.style.left = startPct + "%";
     navRangeShade.style.width = Math.max(endPct - startPct, 0) + "%";
   }
 
@@ -635,11 +620,8 @@
     const maxIndex = fullLabels.length - 1;
     const idx = Math.round(pct * maxIndex);
 
-    if (draggingHandle === "start") {
-      currentStartIndex = Math.min(idx, currentEndIndex);
-    } else if (draggingHandle === "end") {
-      currentEndIndex = Math.max(idx, currentStartIndex);
-    }
+    if (draggingHandle === "start") currentStartIndex = Math.min(idx, currentEndIndex);
+    else if (draggingHandle === "end") currentEndIndex = Math.max(idx, currentStartIndex);
 
     applyYearWindow();
   }
@@ -648,10 +630,9 @@
     if (!projectionChart || !fullLabels.length || !fullDatasets.length) return;
 
     const start = Math.max(0, Math.min(currentStartIndex, fullLabels.length - 1));
-    const end   = Math.max(start, Math.min(currentEndIndex, fullLabels.length - 1));
-
+    const end = Math.max(start, Math.min(currentEndIndex, fullLabels.length - 1));
     currentStartIndex = start;
-    currentEndIndex   = end;
+    currentEndIndex = end;
 
     const windowLabels = fullLabels.slice(start, end + 1);
     const windowDatasets = fullDatasets.map(function (ds, i) {
@@ -681,7 +662,6 @@
     const container = document.getElementById("yearRangeControls");
     if (!container) return;
     container.innerHTML = "";
-
     if (totalYears <= 1) return;
 
     container.innerHTML =
@@ -695,10 +675,10 @@
   }
 
   function initNavigatorControls(totalYears) {
-    navWrapper     = document.getElementById("navigatorWrapper");
+    navWrapper = document.getElementById("navigatorWrapper");
     navHandleStart = document.getElementById("navHandleStart");
-    navHandleEnd   = document.getElementById("navHandleEnd");
-    navRangeShade  = document.getElementById("navRangeShade");
+    navHandleEnd = document.getElementById("navHandleEnd");
+    navRangeShade = document.getElementById("navRangeShade");
 
     if (!navWrapper || !navHandleStart || !navHandleEnd || !navRangeShade) return;
 
@@ -742,14 +722,14 @@
      CHARTS
   ================================= */
   function updateCharts(rows, assetsMeta) {
-    const mainCanvas      = document.getElementById("projectionChart");
-    const allocCanvas     = document.getElementById("allocationChart");
-    const incomeCanvas    = document.getElementById("incomeChart");
+    const mainCanvas = document.getElementById("projectionChart");
+    const allocCanvas = document.getElementById("allocationChart");
+    const incomeCanvas = document.getElementById("incomeChart");
     const navigatorCanvas = document.getElementById("navigatorChart");
     const togglesContainer = document.getElementById("assetToggles");
     if (!rows || rows.length === 0) return;
 
-    const labels        = rows.map(function (r) { return "Year " + r.year; });
+    const labels = rows.map(function (r) { return "Year " + r.year; });
     const totalBalances = rows.map(function (r) { return r.totalBalance; });
 
     let cumulative = 0;
@@ -782,7 +762,7 @@
         tension: 0.25,
         borderWidth: 1.5,
         borderColor: "#ffe08c",
-        borderDash: [6,4],
+        borderDash: [6, 4],
         fill: false,
         pointRadius: isNarrowScreen ? 0 : 3,
         pointHoverRadius: isNarrowScreen ? 0 : 5
@@ -805,11 +785,11 @@
       });
     });
 
-    fullLabels   = labels;
+    fullLabels = labels;
     fullDatasets = lineDatasets;
     datasetHidden = new Array(fullDatasets.length).fill(false);
     currentStartIndex = 0;
-    currentEndIndex   = labels.length - 1;
+    currentEndIndex = labels.length - 1;
 
     const commonScales = {
       x: {
@@ -825,22 +805,16 @@
             return label.replace("Year ", "");
           }
         },
-        grid: {
-          color: "rgba(255,255,255,0.08)"
-        }
+        grid: { color: "rgba(255,255,255,0.08)" }
       },
       y: {
         ticks: {
           color: "#f5f5f5",
           font: { size: isNarrowScreen ? 9 : 10 },
           maxTicksLimit: 6,
-          callback(value) {
-            return "$" + value.toLocaleString();
-          }
+          callback(value) { return "$" + value.toLocaleString(); }
         },
-        grid: {
-          color: "rgba(255,255,255,0.08)"
-        }
+        grid: { color: "rgba(255,255,255,0.08)" }
       }
     };
 
@@ -850,25 +824,12 @@
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
-        elements: {},
-        plugins: {},
-        layout: {
-          padding: {
-            top: 10,
-            left: 8,
-            right: 8,
-            bottom: 90
-          }
-        },
+        layout: { padding: { top: 10, left: 8, right: 8, bottom: 90 } },
         scales: commonScales
       };
 
       if (!projectionChart) {
-        projectionChart = new Chart(ctx, {
-          type: "line",
-          data: { labels: [], datasets: [] },
-          options: options
-        });
+        projectionChart = new Chart(ctx, { type: "line", data: { labels: [], datasets: [] }, options });
       } else {
         projectionChart.options = options;
       }
@@ -892,14 +853,8 @@
       const navOptions = {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { enabled: false }
-        },
-        scales: {
-          x: { display: false },
-          y: { display: false }
-        }
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        scales: { x: { display: false }, y: { display: false } }
       };
 
       if (navigatorChart) {
@@ -922,7 +877,7 @@
         fullDatasets.forEach(function (ds, idx) {
           if (idx < 2) return;
           const label = ds.label || ("Asset " + (idx - 1));
-          const wrap  = document.createElement("label");
+          const wrap = document.createElement("label");
           wrap.className = "asset-toggle";
 
           const input = document.createElement("input");
@@ -968,9 +923,7 @@
         resetZoomBtn.type = "button";
         resetZoomBtn.textContent = "Reset zoom";
         resetZoomBtn.addEventListener("click", function () {
-          if (projectionChart && projectionChart.resetZoom) {
-            projectionChart.resetZoom();
-          }
+          if (projectionChart && projectionChart.resetZoom) projectionChart.resetZoom();
           currentStartIndex = 0;
           currentEndIndex = fullLabels.length ? fullLabels.length - 1 : 0;
           applyYearWindow();
@@ -986,9 +939,9 @@
     const finalRow = rows[rows.length - 1];
 
     if (allocCanvas && assetsMeta && assetsMeta.length && finalRow.balancesByAsset) {
-      const ctx2        = allocCanvas.getContext("2d");
+      const ctx2 = allocCanvas.getContext("2d");
       const allocLabels = assetsMeta.map(function (a) { return a.name; });
-      const allocData   = finalRow.balancesByAsset;
+      const allocData = finalRow.balancesByAsset;
       const doughnutData = {
         labels: allocLabels,
         datasets: [{
@@ -1001,18 +954,15 @@
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: {
-            position: "bottom",
-            labels: { color: "#f5f5f5", usePointStyle: true }
-          },
+          legend: { position: "bottom", labels: { color: "#f5f5f5", usePointStyle: true } },
           tooltip: {
             callbacks: {
               label: function (ctx) {
                 const label = ctx.label || "";
                 const value = ctx.parsed || 0;
-                const arr   = ctx.dataset.data || [];
-                const total = arr.reduce(function (a,b){return a+b;},0);
-                const pct   = total ? ((value/total)*100).toFixed(1) : "0.0";
+                const arr = ctx.dataset.data || [];
+                const total = arr.reduce(function (a, b) { return a + b; }, 0);
+                const pct = total ? ((value / total) * 100).toFixed(1) : "0.0";
                 return label + ": $" + formatMoney(value) + " (" + pct + "%)";
               }
             }
@@ -1031,12 +981,12 @@
 
     if (incomeCanvas && lastSummary) {
       const ctx3 = incomeCanvas.getContext("2d");
-      const s    = lastSummary;
+      const s = lastSummary;
       const incomeData = {
-        labels: ["Reinvested distributions","Net income received","Taxes on income"],
+        labels: ["Reinvested distributions", "Net income received", "Taxes on income"],
         datasets: [{
           data: [s.totalReinvested, s.totalPaidOutNet, s.totalTaxPaid],
-          backgroundColor: ["#4bc0c0","#ef5122","#ffcd56"],
+          backgroundColor: ["#4bc0c0", "#ef5122", "#ffcd56"],
           borderWidth: 0
         }]
       };
@@ -1044,18 +994,15 @@
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: {
-            position: "bottom",
-            labels: { color: "#f5f5f5", usePointStyle: true }
-          },
+          legend: { position: "bottom", labels: { color: "#f5f5f5", usePointStyle: true } },
           tooltip: {
             callbacks: {
               label: function (ctx) {
                 const label = ctx.label || "";
                 const value = ctx.parsed || 0;
-                const arr   = ctx.dataset.data || [];
-                const total = arr.reduce(function (a,b){return a+b;},0);
-                const pct   = total ? ((value/total)*100).toFixed(1) : "0.0";
+                const arr = ctx.dataset.data || [];
+                const total = arr.reduce(function (a, b) { return a + b; }, 0);
+                const pct = total ? ((value / total) * 100).toFixed(1) : "0.0";
                 return label + ": $" + formatMoney(value) + " (" + pct + "%)";
               }
             }
@@ -1086,20 +1033,19 @@
     const s = lastSummary;
 
     let totalDistributions = 0;
-    let totalGrossPayout   = 0;
-    let totalNetPayout     = 0;
+    let totalGrossPayout = 0;
+    let totalNetPayout = 0;
 
     lastRows.forEach(function (row) {
       totalDistributions += row.yearDist;
-      totalGrossPayout   += row.yearPayoutGross;
-      totalNetPayout     += row.yearPayoutNet;
+      totalGrossPayout += row.yearPayoutGross;
+      totalNetPayout += row.yearPayoutNet;
     });
 
-    const totalTax        = totalGrossPayout - totalNetPayout;
+    const totalTax = totalGrossPayout - totalNetPayout;
     const totalReinvested = totalDistributions - totalGrossPayout;
 
     const lines = [];
-
     lines.push("Summary");
     lines.push("Metric,Value");
     lines.push("Final total balance,$" + finalRow.totalBalance.toFixed(2));
@@ -1124,17 +1070,17 @@
     lines.push("");
     lines.push("Income run-rate (last year),");
     lines.push("Gross (before tax),");
-    lines.push("Annual gross,$"    + s.annualGrossIncome.toFixed(2));
+    lines.push("Annual gross,$" + s.annualGrossIncome.toFixed(2));
     lines.push("Quarterly gross,$" + s.quarterlyGross.toFixed(2));
-    lines.push("Monthly gross,$"   + s.monthlyGross.toFixed(2));
-    lines.push("Weekly gross,$"    + s.weeklyGross.toFixed(2));
+    lines.push("Monthly gross,$" + s.monthlyGross.toFixed(2));
+    lines.push("Weekly gross,$" + s.weeklyGross.toFixed(2));
 
     lines.push("");
     lines.push("Net (after tax),");
-    lines.push("Annual net,$"    + s.annualNetIncome.toFixed(2));
+    lines.push("Annual net,$" + s.annualNetIncome.toFixed(2));
     lines.push("Quarterly net,$" + s.quarterlyNet.toFixed(2));
-    lines.push("Monthly net,$"   + s.monthlyNet.toFixed(2));
-    lines.push("Weekly net,$"    + s.weeklyNet.toFixed(2));
+    lines.push("Monthly net,$" + s.monthlyNet.toFixed(2));
+    lines.push("Weekly net,$" + s.weeklyNet.toFixed(2));
 
     lines.push("");
     lines.push("Year-by-year breakdown,");
@@ -1181,7 +1127,7 @@
 
     const csvContent = lines.join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url  = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
     link.download = "microdca_projection_detailed.csv";
@@ -1204,43 +1150,52 @@
     document.body.removeChild(link);
   }
 
-  function downloadProjectionPNG() {
-    downloadPNGFromChart(projectionChart, "microdca_projection_chart.png");
-  }
-
-  function downloadAllocationPNG() {
-    downloadPNGFromChart(allocationChart, "microdca_allocation_chart.png");
-  }
-
-  function downloadIncomePNG() {
-    downloadPNGFromChart(incomeChart, "microdca_income_chart.png");
-  }
+  function downloadProjectionPNG() { downloadPNGFromChart(projectionChart, "microdca_projection_chart.png"); }
+  function downloadAllocationPNG() { downloadPNGFromChart(allocationChart, "microdca_allocation_chart.png"); }
+  function downloadIncomePNG() { downloadPNGFromChart(incomeChart, "microdca_income_chart.png"); }
 
   /* ================================
      INIT
   ================================= */
   document.addEventListener("DOMContentLoaded", function () {
     const assetCountSelect = document.getElementById("assetCount");
-    const calcBtn          = document.getElementById("calcBtn");
-    const csvAllBtn        = document.getElementById("csvAllBtn");
-    const mainPngBtn       = document.getElementById("mainPngBtn");
-    const allocPngBtn      = document.getElementById("allocPngBtn");
-    const incomePngBtn     = document.getElementById("incomePngBtn");
+    const calcBtn = document.getElementById("calcBtn");
+    const csvAllBtn = document.getElementById("csvAllBtn");
+    const mainPngBtn = document.getElementById("mainPngBtn");
+    const allocPngBtn = document.getElementById("allocPngBtn");
+    const incomePngBtn = document.getElementById("incomePngBtn");
+
+    // Global allocation mode listeners (expects HTML radios with these IDs)
+    const allocModePct = document.getElementById("allocModePct");
+    const allocModeUsd = document.getElementById("allocModeUsd");
+    [allocModePct, allocModeUsd].forEach(el => {
+      if (!el) return;
+      el.addEventListener("change", function () {
+        syncAllAllocUI();
+        updateAssetTotals();
+      });
+    });
 
     if (assetCountSelect) {
       buildAssetRows(parseInt(assetCountSelect.value || "2", 10));
       assetCountSelect.addEventListener("change", function () {
         const count = parseInt(this.value || "1", 10);
         buildAssetRows(count);
+        syncAllAllocUI();
+        updateAssetTotals();
       });
     }
 
-    if (calcBtn)   calcBtn.addEventListener("click", calculateProjection);
+    if (calcBtn) calcBtn.addEventListener("click", calculateProjection);
     if (csvAllBtn) csvAllBtn.addEventListener("click", downloadCSV);
 
-    if (mainPngBtn)   mainPngBtn.addEventListener("click", downloadProjectionPNG);
-    if (allocPngBtn)  allocPngBtn.addEventListener("click", downloadAllocationPNG);
+    if (mainPngBtn) mainPngBtn.addEventListener("click", downloadProjectionPNG);
+    if (allocPngBtn) allocPngBtn.addEventListener("click", downloadAllocationPNG);
     if (incomePngBtn) incomePngBtn.addEventListener("click", downloadIncomePNG);
+
+    // Initial sync (in case HTML loads with $ pre-selected)
+    syncAllAllocUI();
+    updateAssetTotals();
   });
 
 })();
