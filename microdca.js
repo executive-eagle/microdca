@@ -1,1201 +1,1342 @@
-(function () {
-  function formatMoney(x) {
-    const n = Number(x) || 0;
-    return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+(() => {
+  if (window.__microdcaSimulatedPortfolioLoaded) return;
+  window.__microdcaSimulatedPortfolioLoaded = true;
+
+  const $ = (id) => document.getElementById(id);
+
+  const fmtUSD = (x) => {
+    if (!isFinite(x)) return "—";
+    const sign = x < 0 ? "-" : "";
+    const v = Math.abs(x);
+    return sign + v.toLocaleString(undefined, { style:"currency", currency:"USD", maximumFractionDigits:2 });
+  };
+  const fmtPct = (x) => isFinite(x) ? (x*100).toFixed(2) + "%" : "—";
+  const iso = (d) => d.toISOString().slice(0,10);
+  const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+
+  const normWeights = (arr) => {
+    const clean = arr.map(x => Math.max(0, Number(x) || 0));
+    const s = clean.reduce((p,c)=>p+c,0);
+    if (s <= 0) return clean.map(_=>0);
+    return clean.map(x => x / s);
+  };
+
+  const isMarketDay = (dateObj) => {
+    const d = dateObj.getUTCDay();
+    return d !== 0 && d !== 6;
+  };
+
+  const parseCsv = (text) => {
+    const lines = text.trim().split(/\r?\n/);
+    const out = [];
+    for (let i=1;i<lines.length;i++){
+      const parts = lines[i].split(",");
+      if (parts.length < 5) continue;
+      const date = parts[0];
+      const close = Number(parts[4]);
+      if (!date || !isFinite(close)) continue;
+      out.push({ date, close });
+    }
+    return out;
+  };
+
+  const el = {
+    name: $("spName"),
+    startCash: $("spStartCash"),
+    dcaAmt: $("spDcaAmt"),
+    freq: $("spFreq"),
+    startDate: $("spStartDate"),
+    endDate: $("spEndDate"),
+    rebalance: $("spRebalance"),
+
+    useMargin: $("spUseMargin"),
+    marginRate: $("spMarginRate"),
+    maxLTV: $("spMaxLTV"),
+    marginPolicy: $("spMarginPolicy"),
+    dayCount: $("spDayCount"),
+
+    coreTickers: $("spTickers"),
+    coreWeights: $("spWeights"),
+    allocPreview: $("spAllocPreview")?.querySelector("tbody"),
+    updateAlloc: $("spUpdateAlloc"),
+
+    incomeOn: $("spIncomeOn"),
+    incomeTickers: $("spIncomeTickers"),
+    incomeWeights: $("spIncomeWeights"),
+    incomeSplit: $("spIncomeSplit"),
+    incomeYield: $("spIncomeYield"),
+    incomeMode: $("spIncomeMode"),
+    adjustFreq: $("spAdjustFreq"),
+    targetRatio: $("spTargetRatio"),
+    targetBorrow: $("spTargetBorrow"),
+    targetRow: $("spTargetRow"),
+    bandRow: $("spBandRow"),
+    bandMin: $("spBandMin"),
+    bandMax: $("spBandMax"),
+
+    // NEW: Bills + Taxes
+    billsOn: $("spBillsOn"),
+    billsMonthly: $("spBillsMonthly"),
+    taxRate: $("spTaxRate"),
+    billsFallback: $("spBillsFallback"),
+    taxHandling: $("spTaxHandling"),
+
+    build: $("spBuild"),
+    reset: $("spReset"),
+    play: $("spPlay"),
+    pause: $("spPause"),
+    step: $("spStep"),
+    toEnd: $("spToEnd"),
+
+    speed: $("spSpeed"),
+    speedLabel: $("spSpeedLabel"),
+    mode: $("spMode"),
+
+    badge: $("spBadge"),
+    vizDesc: $("spVizDesc"),
+    log: $("spLog"),
+    alert: $("spAlert"),
+
+    kDate: $("kDate"),
+    kEqCash: $("kEqCash"),
+    kEqMargin: $("kEqMargin"),
+    kDebt: $("kDebt"),
+    kLTV: $("kLTV"),
+    kCover: $("kCover"),
+    kTax: $("kTax"),
+    kBills: $("kBills"),
+
+    riskGrade: $("riskGrade"),
+    riskFill: $("riskFill"),
+    riskProx: $("riskProx"),
+    riskDev: $("riskDev"),
+    riskSignal: $("riskSignal"),
+
+    dlPng: $("spDlPng"),
+    dlCsv: $("spDlCsv"),
+
+    canvas: $("spCanvas")
+  };
+
+  if (!el.canvas || !el.build || !el.reset) return;
+
+  const today = new Date();
+  const end = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  const start = new Date(end.getTime() - 1000*60*60*24*365*3);
+  el.startDate.value = iso(start);
+  el.endDate.value = iso(end);
+
+  function syncIncomeModeUI(){
+    const mode = el.incomeMode.value;
+    if (mode === "price_band"){
+      el.bandRow?.classList.remove("hidden");
+      el.targetRow?.classList.add("hidden");
+    } else if (mode === "target_ratio"){
+      el.bandRow?.classList.add("hidden");
+      el.targetRow?.classList.remove("hidden");
+    } else {
+      el.bandRow?.classList.add("hidden");
+      el.targetRow?.classList.add("hidden");
+    }
+  }
+  el.incomeMode.addEventListener("change", syncIncomeModeUI);
+  syncIncomeModeUI();
+
+  function log(msg){
+    const t = new Date();
+    const stamp = t.toLocaleTimeString(undefined, { hour:"2-digit", minute:"2-digit" });
+    el.log.textContent = `[${stamp}] ${msg}\n` + el.log.textContent;
   }
 
-  let lastRows = [];
-  let projectionChart = null;
-  let allocationChart = null;
-  let incomeChart = null;
-  let navigatorChart = null;
-  let lastAssetsMeta = [];
-  let lastSummary = null;
-
-  let fullLabels = [];
-  let fullDatasets = [];
-  let datasetHidden = [];
-  let currentStartIndex = 0;
-  let currentEndIndex = 0;
-
-  let yearRangeLabelSpan = null;
-  let navWrapper = null;
-  let navHandleStart = null;
-  let navHandleEnd = null;
-  let navRangeShade = null;
-  let draggingHandle = null;
-  let navigatorInitialized = false;
-
-  if (window["chartjs-plugin-zoom"]) {
-    Chart.register(window["chartjs-plugin-zoom"]);
+  let alertTimer = null;
+  function showAlert(msg){
+    if (!msg){ el.alert.style.display = "none"; el.alert.textContent = ""; return; }
+    el.alert.textContent = msg;
+    el.alert.style.display = "block";
+    clearTimeout(alertTimer);
+    alertTimer = setTimeout(() => { el.alert.style.display = "none"; }, 2600);
   }
 
-  /* ================================
-     GLOBAL ALLOCATION MODE (% vs $)
-  ================================= */
-  function getGlobalAllocMode() {
-    const pct = document.getElementById("allocModePct");
-    const usd = document.getElementById("allocModeUsd");
-    if (usd && usd.checked) return "usd";
-    if (pct && pct.checked) return "pct";
-    return "pct"; // default
-  }
+  function previewAlloc(){
+    const tickers = el.coreTickers.value.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+    const weights = normWeights(el.coreWeights.value.split(",").map(s => s.trim()));
+    if (!el.allocPreview) return;
 
-  function syncAllAllocUI() {
-    const mode = getGlobalAllocMode();
-    const rows = Array.from(document.querySelectorAll(".asset-row"));
-
-    rows.forEach(row => {
-      const pctWrap = row.querySelector(".alloc-pct-wrap");
-      const usdWrap = row.querySelector(".alloc-usd-wrap");
-      if (pctWrap) pctWrap.style.display = (mode === "pct") ? "" : "none";
-      if (usdWrap) usdWrap.style.display = (mode === "usd") ? "" : "none";
+    el.allocPreview.innerHTML = "";
+    tickers.forEach((t,i) => {
+      const w = weights[i] ?? 0;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="mono">${t}</td>
+        <td class="mono">${(w*100).toFixed(2)}%</td>
+        <td>${i === 0 ? "Anchor position" : "Satellite / diversifier"}</td>
+      `;
+      el.allocPreview.appendChild(tr);
     });
 
-    // update totals subtitle + value formatting
-    const allocSub = document.getElementById("totalsAllocSub");
-    if (allocSub) {
-      allocSub.textContent = (mode === "usd") ? "Total $ Allocation" : "Total Allocation";
+    if (!tickers.length){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="3">Add tickers to preview allocation.</td>`;
+      el.allocPreview.appendChild(tr);
     }
   }
+  el.updateAlloc?.addEventListener("click", previewAlloc);
+  previewAlloc();
 
-  /* ================================
-     TOTALS ROW CALCULATOR (GLOBAL MODE)
-  ================================= */
-  function updateAssetTotals() {
-    const mode = getGlobalAllocMode();
-    const rows = Array.from(document.querySelectorAll(".asset-row"));
+  async function fetchDailyCloses(ticker){
+    const t = ticker.toLowerCase();
+    const stooqSymbol = t.includes(".") ? t : `${t}.us`;
+    const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSymbol)}&i=d`;
+    const res = await fetch(url, { mode: "cors" });
+    if (!res.ok) throw new Error(`Price fetch failed (${ticker})`);
+    const text = await res.text();
+    const rows = parseCsv(text);
+    if (!rows.length) throw new Error(`No data returned (${ticker})`);
+    return rows;
+  }
 
-    let pctSum = 0;
-    let usdSum = 0;
+  function syntheticPrices(ticker, startISO, endISO){
+    let seed = 0;
+    for (let i=0;i<ticker.length;i++) seed = (seed*31 + ticker.charCodeAt(i)) >>> 0;
+    const rand = () => ((seed = (1664525*seed + 1013904223)>>>0) / 4294967296);
 
-    if (mode === "usd") {
-      rows.forEach(row => {
-        const usd = parseFloat(row.querySelector(".asset-alloc-usd")?.value || 0);
-        usdSum += (Number.isFinite(usd) && usd > 0) ? usd : 0;
-      });
-    } else {
-      rows.forEach(row => {
-        const pct = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
-        pctSum += (Number.isFinite(pct) && pct > 0) ? pct : 0;
-      });
+    const start = new Date(startISO + "T00:00:00Z");
+    const end = new Date(endISO + "T00:00:00Z");
+    const out = [];
+    let px = 60 + rand()*180;
+
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)){
+      if (!isMarketDay(d)) continue;
+      const drift = 0.00025;
+      const vol = 0.012;
+      const shock = (rand()*2 - 1) * vol;
+      px = Math.max(1, px * (1 + drift + shock));
+      out.push({ date: iso(d), close: px });
+    }
+    return out;
+  }
+
+  async function loadPricesForTickers(tickers, startISO, endISO){
+    const series = {};
+    for (const t of tickers){
+      try{
+        log(`Loading price history for ${t}...`);
+        const rows = await fetchDailyCloses(t);
+        const filtered = rows
+          .filter(r => r.date >= startISO && r.date <= endISO)
+          .filter(r => !!r.close && isFinite(r.close));
+        if (filtered.length < 30) throw new Error("Too few rows in range");
+        series[t] = filtered;
+        log(`Loaded ${filtered.length} rows for ${t}.`);
+      }catch(e){
+        log(`Could not load ${t}. Using synthetic series. (${e.message})`);
+        series[t] = syntheticPrices(t, startISO, endISO);
+      }
+    }
+    return series;
+  }
+
+  function alignTimeline(seriesByTicker){
+    const tickers = Object.keys(seriesByTicker);
+    const maps = {};
+    tickers.forEach(t => {
+      const m = new Map();
+      seriesByTicker[t].forEach(r => m.set(r.date, r.close));
+      maps[t] = m;
+    });
+
+    let base = tickers[0];
+    for (const t of tickers) if (seriesByTicker[t].length < seriesByTicker[base].length) base = t;
+
+    const dates = [];
+    for (const r of seriesByTicker[base]){
+      const d = r.date;
+      let ok = true;
+      for (const t of tickers){
+        if (!maps[t].has(d)) { ok = false; break; }
+      }
+      if (ok) dates.push(d);
     }
 
-    // Weighted averages (weights depend on mode)
-    let weightSum = 0;
-    let weightedGrowth = 0;
-    let weightedYield = 0;
-    let weightedReinvest = 0;
+    const prices = {};
+    tickers.forEach(t => prices[t] = dates.map(d => maps[t].get(d)));
+    return { dates, prices, tickers };
+  }
 
-    rows.forEach(row => {
-      const growth = parseFloat(row.querySelector(".asset-growth")?.value || 0);
-      const yld = parseFloat(row.querySelector(".asset-yield")?.value || 0);
-      const reinvest = parseFloat(row.querySelector(".asset-reinvest")?.value || 0);
+  function buildBuySchedule(dates, freq){
+    const buy = new Array(dates.length).fill(false);
 
-      let w = 0;
-      if (mode === "usd") {
-        const usd = parseFloat(row.querySelector(".asset-alloc-usd")?.value || 0);
-        const usdSafe = (Number.isFinite(usd) && usd > 0) ? usd : 0;
-        w = usdSafe; // weight by dollars
+    if (freq === "daily"){
+      for (let i=0;i<dates.length;i++) buy[i] = true;
+      return buy;
+    }
+
+    if (freq === "weekly"){
+      let lastKey = null;
+      for (let i=0;i<dates.length;i++){
+        const d = new Date(dates[i] + "T00:00:00Z");
+        const onejan = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+        const week = Math.floor((((d - onejan) / 86400000) + onejan.getUTCDay() + 1) / 7);
+        const key = `${d.getUTCFullYear()}-${week}`;
+        if (key !== lastKey){ buy[i] = true; lastKey = key; }
+      }
+      return buy;
+    }
+
+    let lastMonth = null;
+    for (let i=0;i<dates.length;i++){
+      const d = new Date(dates[i] + "T00:00:00Z");
+      const key = `${d.getUTCFullYear()}-${d.getUTCMonth()+1}`;
+      if (key !== lastMonth){ buy[i] = true; lastMonth = key; }
+    }
+    return buy;
+  }
+
+  function isAdjustDay(i, dates, freq){
+    if (freq === "daily") return true;
+    if (freq === "weekly") return buildBuySchedule(dates, "weekly")[i] === true;
+    if (freq === "monthly") return buildBuySchedule(dates, "monthly")[i] === true;
+    return true;
+  }
+
+  // Month-end trigger: last market day of each month
+  function buildMonthEndSchedule(dates){
+    const isMonthEnd = new Array(dates.length).fill(false);
+    for (let i=0;i<dates.length;i++){
+      const d = new Date(dates[i] + "T00:00:00Z");
+      const next = (i < dates.length-1) ? new Date(dates[i+1] + "T00:00:00Z") : null;
+      if (!next){
+        isMonthEnd[i] = true;
       } else {
-        const pct = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
-        const pctSafe = (Number.isFinite(pct) && pct > 0) ? pct : 0;
-        w = pctSafe; // weight by percent points
+        const m1 = d.getUTCMonth();
+        const m2 = next.getUTCMonth();
+        if (m1 !== m2) isMonthEnd[i] = true;
       }
-
-      weightSum += w;
-      weightedGrowth += (Number.isFinite(growth) ? growth : 0) * w;
-      weightedYield += (Number.isFinite(yld) ? yld : 0) * w;
-      weightedReinvest += (Number.isFinite(reinvest) ? reinvest : 0) * w;
-    });
-
-    const avgGrowth = weightSum ? (weightedGrowth / weightSum) : 0;
-    const avgYield = weightSum ? (weightedYield / weightSum) : 0;
-    const avgReinvest = weightSum ? (weightedReinvest / weightSum) : 0;
-
-    const allocEl = document.getElementById("totalsAlloc");
-    const growthEl = document.getElementById("totalsGrowth");
-    const yieldEl = document.getElementById("totalsYield");
-    const reinvEl = document.getElementById("totalsReinvest");
-    const rowEl = document.getElementById("assetTotalsRow");
-    if (!allocEl || !growthEl || !yieldEl || !reinvEl || !rowEl) return;
-
-    if (mode === "usd") {
-      allocEl.textContent = "$" + formatMoney(usdSum);
-    } else {
-      allocEl.textContent = pctSum.toFixed(1) + "%";
     }
-    growthEl.textContent = avgGrowth.toFixed(2) + "%";
-    yieldEl.textContent = avgYield.toFixed(2) + "%";
-    reinvEl.textContent = avgReinvest.toFixed(1) + "%";
-
-    // Validation rules by mode
-    let invalid = false;
-    if (mode === "pct") {
-      if (pctSum > 100.0001) invalid = true;
-      if (Math.abs(pctSum - 100) > 0.05) invalid = true;
-    } else {
-      if (usdSum <= 0.0001) invalid = true;
-    }
-
-    if (invalid) rowEl.classList.add("invalid");
-    else rowEl.classList.remove("invalid");
+    return isMonthEnd;
   }
 
-  /* ================================
-     BUILD ASSET ROWS + TOTALS + TIP (GLOBAL MODE)
-  ================================= */
-  function buildAssetRows(count) {
-    const container = document.getElementById("assetsContainer");
-    if (!container) return;
-    container.innerHTML = "";
+  function simulateCashOnly(params){
+    const { dates, prices, tickers, weights, startCash, dcaAmt, freq, rebalanceBuys } = params;
+    const n = dates.length;
 
-    const equalAlloc = 100 / count;
+    const shares = {};
+    tickers.forEach(t => shares[t] = 0);
+    let cash = startCash;
 
-    for (let i = 0; i < count; i++) {
-      const index = i + 1;
-      const row = document.createElement("div");
-      row.className = "asset-row";
-      row.setAttribute("data-index", String(i));
+    const equityArr = new Array(n).fill(0);
+    const events = { dep: new Array(n).fill(0), buy: new Array(n).fill(0) };
+    const buySignal = buildBuySchedule(dates, freq);
 
-      row.innerHTML =
-        '<div class="asset-row-inner">'
-        + '  <div class="asset-card">'
-        + '    <div class="asset-card-header">Asset ' + index + ' name</div>'
-        + '    <input type="text" class="asset-name" placeholder="'
-        + (index === 1 ? 'Bitcoin' : (index === 2 ? 'Income ETF' : 'Asset ' + index))
-        + '" />'
-        + '  </div>'
-
-        + '  <div class="asset-field">'
-        + '    <label>Allocation</label>'
-        + '    <div class="alloc-mode-row">'
-        + '      <div class="alloc-input-wrap alloc-pct-wrap">'
-        + '        <input type="number" class="asset-alloc" min="0" max="100" step="0.1" value="'
-        + equalAlloc.toFixed(1) + '" />'
-        + '      </div>'
-        + '      <div class="alloc-input-wrap alloc-usd-wrap" style="display:none">'
-        + '        <input type="number" class="asset-alloc-usd" min="0" step="0.01" placeholder="0" value="0" />'
-        + '      </div>'
-        + '    </div>'
-        + '  </div>'
-
-        + '  <div class="asset-field">'
-        + '    <label>Annual growth (%)</label>'
-        + '    <input type="number" class="asset-growth" step="0.1" value="'
-        + (index === 1 ? 15 : 8) + '" />'
-        + '  </div>'
-        + '  <div class="asset-field">'
-        + '    <label>Distribution yield (%)</label>'
-        + '    <input type="number" class="asset-yield" step="0.1" value="'
-        + (index === 2 ? 8 : 0) + '" />'
-        + '  </div>'
-        + '  <div class="asset-field">'
-        + '    <label>Reinvest % of distributions</label>'
-        + '    <input type="number" class="asset-reinvest" min="0" max="100" step="1" value="50" />'
-        + '  </div>'
-        + '</div>';
-
-      container.appendChild(row);
+    function pv(i){
+      let v = 0;
+      for (const t of tickers) v += shares[t] * prices[t][i];
+      return v;
     }
 
-    // TOTALS ROW
-    const totalsRow = document.createElement("div");
-    totalsRow.id = "assetTotalsRow";
-    totalsRow.className = "asset-totals-row";
-    totalsRow.innerHTML = `
-      <div class="totals-label">TOTALS</div>
+    function curWeights(i){
+      const v = pv(i);
+      const w = {};
+      if (v <= 0){ tickers.forEach(t => w[t]=0); return w; }
+      for (const t of tickers) w[t] = (shares[t] * prices[t][i]) / v;
+      return w;
+    }
 
-      <div class="totals-cell">
-        <div id="totalsAlloc">0%</div>
-        <div id="totalsAllocSub" style="opacity:.65;font-size:11px">Total Allocation</div>
-      </div>
+    function allocate(i, amt){
+      if (amt <= 0) return;
+      let w = weights.slice();
 
-      <div class="totals-cell">
-        <div id="totalsGrowth">0%</div>
-        <div style="opacity:.65;font-size:11px">Avg Growth</div>
-      </div>
+      if (rebalanceBuys){
+        const cw = curWeights(i);
+        const raw = tickers.map((t,idx) => Math.max(0, weights[idx] - (cw[t] || 0)));
+        const sum = raw.reduce((p,c)=>p+c,0);
+        if (sum > 0) w = raw.map(x => x/sum);
+      }
 
-      <div class="totals-cell">
-        <div id="totalsYield">0%</div>
-        <div style="opacity:.65;font-size:11px">Avg Yield</div>
-      </div>
+      for (let k=0;k<tickers.length;k++){
+        const t = tickers[k];
+        const a = amt * (w[k] || 0);
+        if (a <= 0) continue;
+        shares[t] += a / prices[t][i];
+        cash -= a;
+        events.buy[i] += a;
+      }
+      if (Math.abs(cash) < 1e-8) cash = 0;
+    }
 
-      <div class="totals-cell">
-        <div id="totalsReinvest">0%</div>
-        <div style="opacity:.65;font-size:11px">Avg Reinvest</div>
-      </div>
-    `;
-    container.appendChild(totalsRow);
+    for (let i=0;i<n;i++){
+      if (buySignal[i]){
+        cash += dcaAmt;
+        events.dep[i] = dcaAmt;
+        allocate(i, cash);
+      }
+      equityArr[i] = pv(i) + cash;
+    }
 
-    // TIP UNDER TOTALS
-    const hint = document.createElement("p");
-    hint.className = "assets-hint";
-    hint.innerHTML =
-      'Tip: Use the global Allocation mode to set all assets by <strong>%</strong> or by <strong>$</strong>. '
-      + 'In <strong>$</strong> mode, weights are based on your dollar entries.';
-    container.appendChild(hint);
-
-    // Wire totals updates
-    setTimeout(() => {
-      container.querySelectorAll(".asset-row input").forEach(el => {
-        el.addEventListener("input", updateAssetTotals);
-      });
-      syncAllAllocUI();
-      updateAssetTotals();
-    }, 0);
+    return {
+      dates,
+      equityArr,
+      debtArr: new Array(n).fill(0),
+      ltvArr: new Array(n).fill(0),
+      coverArr: new Array(n).fill(NaN),
+      targetDevArr: new Array(n).fill(0),
+      taxReserveArr: new Array(n).fill(0),
+      billsPaidArr: new Array(n).fill(0),
+      events
+    };
   }
 
-  /* ================================
-     CORE CALCULATION (GLOBAL ALLOCATION)
-  ================================= */
-  function calculateProjection() {
-    const mode = getGlobalAllocMode();
+  function simulateMarginWithIncome(params){
+    const {
+      dates, prices,
+      coreTickers, coreWeights,
+      incTickers, incWeights,
+      startCash, dcaAmt, freq,
+      useMargin, marginRateAPR, maxLTV, marginPolicy, dayCount,
+      rebalanceBuys,
 
-    const startBalance = parseFloat(document.getElementById("startBalance").value || 0);
-    const contributionAmount = parseFloat(document.getElementById("contributionAmount").value || 0);
-    const contributionFreq = document.getElementById("contributionFreq").value;
-    const years = parseInt(document.getElementById("years").value || 0, 10);
-    const compFreq = document.getElementById("compFreq").value;
+      incomeOn, incomeYieldAPR, incomeSplit,
+      incomeMode, adjustFreq,
+      targetRatio, allowTargetBorrow,
+      bandMin, bandMax,
 
-    const correctionSizePct = parseFloat(document.getElementById("correctionSize").value || 0);
-    const correctionFreqYears = parseInt(document.getElementById("correctionFreqYears").value || 0, 10);
-    const hasCorrections = correctionSizePct > 0 && correctionFreqYears > 0;
-    const correctionDropFrac = correctionSizePct / 100;
+      // Bills/Taxes
+      billsOn, billsMonthly, taxRatePct, billsFallback, taxHandling
+    } = params;
 
-    const taxRatePct = parseFloat(document.getElementById("taxRate").value || 0);
-    const taxFrac = Math.min(Math.max(isNaN(taxRatePct) ? 0 : taxRatePct / 100, 0), 1);
+    const n = dates.length;
+    const allTickers = [...coreTickers, ...incTickers];
+    const shares = {};
+    allTickers.forEach(t => shares[t] = 0);
 
-    if (years <= 0) {
-      alert("Please enter a number of years greater than zero.");
-      return;
-    }
+    let cash = startCash;
+    let debt = 0;
 
-    const assetRows = Array.from(document.querySelectorAll(".asset-row"));
-    if (!assetRows.length) {
-      alert("Please add at least one asset.");
-      return;
-    }
+    // NEW: reserves / tracking
+    let taxReserve = 0;
+    let billsPaidCum = 0;
 
-    // Validate allocation totals per mode
-    let pctSum = 0;
-    let usdSum = 0;
+    const equityArr = new Array(n).fill(0);
+    const debtArr = new Array(n).fill(0);
+    const ltvArr = new Array(n).fill(0);
+    const coverArr = new Array(n).fill(NaN);
+    const targetDevArr = new Array(n).fill(0);
+    const taxReserveArr = new Array(n).fill(0);
+    const billsPaidArr = new Array(n).fill(0);
 
-    if (mode === "usd") {
-      assetRows.forEach(row => {
-        const usd = parseFloat(row.querySelector(".asset-alloc-usd")?.value || 0);
-        usdSum += (Number.isFinite(usd) && usd > 0) ? usd : 0;
-      });
-      if (usdSum <= 0.0001) {
-        alert("In $ allocation mode, please enter a positive $ amount for at least one asset.");
-        return;
-      }
-    } else {
-      assetRows.forEach(row => {
-        const pct = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
-        pctSum += (Number.isFinite(pct) && pct > 0) ? pct : 0;
-      });
-      if (pctSum > 100.0001) {
-        alert("Allocation % entries cannot exceed 100%.");
-        return;
-      }
-      if (Math.abs(pctSum - 100) > 0.05) {
-        alert("In % allocation mode, your allocations must total 100%.");
-        return;
-      }
-    }
+    const ev = {
+      dep: new Array(n).fill(0),
+      buy: new Array(n).fill(0),
 
-    const assets = [];
+      // Interest and income
+      income: new Array(n).fill(0),
+      interest: new Array(n).fill(0),
 
-    assetRows.forEach(function (row, idx) {
-      const name = (row.querySelector(".asset-name").value || "").trim() || ("Asset " + (idx + 1));
+      // Debt mgmt
+      paydown: new Array(n).fill(0),
+      borrowAdj: new Array(n).fill(0),
+      borrowBuy: new Array(n).fill(0),
 
-      const growthPct = parseFloat(row.querySelector(".asset-growth").value || 0);
-      const yieldPct = parseFloat(row.querySelector(".asset-yield").value || 0);
-      const reinvestPctInput = parseFloat(row.querySelector(".asset-reinvest").value || 0);
-
-      let allocFrac = 0;
-
-      if (mode === "usd") {
-        const usd = parseFloat(row.querySelector(".asset-alloc-usd")?.value || 0);
-        const usdSafe = (Number.isFinite(usd) && usd > 0) ? usd : 0;
-        allocFrac = usdSafe / usdSum;
-      } else {
-        const pct = parseFloat(row.querySelector(".asset-alloc")?.value || 0);
-        const pctSafe = (Number.isFinite(pct) && pct > 0) ? pct : 0;
-        allocFrac = pctSafe / 100;
-      }
-
-      assets.push({
-        name: name,
-        allocFrac: allocFrac,
-        growthPct: isNaN(growthPct) ? 0 : growthPct,
-        yieldPct: isNaN(yieldPct) ? 0 : yieldPct,
-        reinvestFrac: Math.min(Math.max((isNaN(reinvestPctInput) ? 0 : reinvestPctInput) / 100, 0), 1),
-        balance: 0
-      });
-    });
-
-    // Defensive normalization
-    const allocFracSum = assets.reduce((s, a) => s + a.allocFrac, 0);
-    if (allocFracSum <= 0) {
-      alert("Allocation results in zero effective weight. Please adjust your entries.");
-      return;
-    }
-    assets.forEach(a => { a.allocFrac = a.allocFrac / allocFracSum; });
-
-    const compStepsMap = { daily: 365, monthly: 12, quarterly: 4, yearly: 1 };
-    const stepsPerYear = compStepsMap[compFreq] || 12;
-    const totalSteps = years * stepsPerYear;
-
-    let annualContribution = 0;
-    switch (contributionFreq) {
-      case "daily365": annualContribution = contributionAmount * 365; break;
-      case "daily251": annualContribution = contributionAmount * 251; break;
-      case "weekly": annualContribution = contributionAmount * 52; break;
-      case "monthly": annualContribution = contributionAmount * 12; break;
-      case "yearly": annualContribution = contributionAmount; break;
-      default: annualContribution = contributionAmount * 12;
-    }
-    const stepContribution = annualContribution / stepsPerYear;
-
-    let totalContrib = startBalance;
-    assets.forEach(function (a) { a.balance = startBalance * a.allocFrac; });
-
-    assets.forEach(function (a) {
-      a.growthPerStep = a.growthPct / 100 / stepsPerYear;
-      a.yieldPerStep = a.yieldPct / 100 / stepsPerYear;
-    });
-
-    let totalDistributions = 0;
-    let totalReinvested = 0;
-    let totalPaidOutGross = 0;
-    let totalPaidOutNet = 0;
-    let totalTaxPaid = 0;
-
-    let yearDistTotal = 0;
-    let yearPayoutGrossTotal = 0;
-    let yearPayoutNetTotal = 0;
-
-    lastRows = [];
-
-    for (let step = 1; step <= totalSteps; step++) {
-      assets.forEach(function (a) {
-        a.balance *= 1 + a.growthPerStep;
-
-        const contribThisStep = stepContribution * a.allocFrac;
-        a.balance += contribThisStep;
-        totalContrib += contribThisStep;
-
-        const distThisStep = a.balance * a.yieldPerStep;
-        if (distThisStep > 0) {
-          const reinvestAmount = distThisStep * a.reinvestFrac;
-          const payoutAmountGross = distThisStep - reinvestAmount;
-
-          const taxThisStep = payoutAmountGross * taxFrac;
-          const payoutAmountNet = payoutAmountGross - taxThisStep;
-
-          a.balance += reinvestAmount;
-
-          totalDistributions += distThisStep;
-          totalReinvested += reinvestAmount;
-          totalPaidOutGross += payoutAmountGross;
-          totalPaidOutNet += payoutAmountNet;
-          totalTaxPaid += taxThisStep;
-
-          yearDistTotal += distThisStep;
-          yearPayoutGrossTotal += payoutAmountGross;
-          yearPayoutNetTotal += payoutAmountNet;
-        }
-      });
-
-      if (step % stepsPerYear === 0) {
-        const yearNumber = step / stepsPerYear;
-
-        if (hasCorrections && yearNumber % correctionFreqYears === 0) {
-          assets.forEach(function (a) { a.balance *= 1 - correctionDropFrac; });
-        }
-
-        const totalBalance = assets.reduce(function (sum, a) { return sum + a.balance; }, 0);
-        const growth = totalBalance - totalContrib;
-        const balancesByAsset = assets.map(function (a) { return a.balance; });
-
-        lastRows.push({
-          year: yearNumber,
-          totalContrib: totalContrib,
-          growth: growth,
-          totalBalance: totalBalance,
-          yearDist: yearDistTotal,
-          yearPayoutGross: yearPayoutGrossTotal,
-          yearPayoutNet: yearPayoutNetTotal,
-          balancesByAsset: balancesByAsset
-        });
-
-        yearDistTotal = 0;
-        yearPayoutGrossTotal = 0;
-        yearPayoutNetTotal = 0;
-      }
-    }
-
-    lastAssetsMeta = assets.map(function (a) { return { name: a.name }; });
-    const finalRow = lastRows[lastRows.length - 1];
-    const resultsDiv = document.getElementById("results");
-
-    const finalBalance = finalRow.totalBalance;
-    const annualGrossIncome = finalRow.yearPayoutGross;
-    const annualNetIncome = finalRow.yearPayoutNet;
-
-    const weeklyGross = annualGrossIncome / 52;
-    const monthlyGross = annualGrossIncome / 12;
-    const quarterlyGross = annualGrossIncome / 4;
-
-    const weeklyNet = annualNetIncome / 52;
-    const monthlyNet = annualNetIncome / 12;
-    const quarterlyNet = annualNetIncome / 4;
-
-    lastSummary = {
-      years: years,
-      finalBalance: finalBalance,
-      totalContrib: totalContrib,
-      totalGrowth: finalRow.growth,
-      totalDistributions: totalDistributions,
-      totalReinvested: totalReinvested,
-      totalPaidOutGross: totalPaidOutGross,
-      totalTaxPaid: totalTaxPaid,
-      totalPaidOutNet: totalPaidOutNet,
-      annualGrossIncome: annualGrossIncome,
-      quarterlyGross: quarterlyGross,
-      monthlyGross: monthlyGross,
-      weeklyGross: weeklyGross,
-      annualNetIncome: annualNetIncome,
-      quarterlyNet: quarterlyNet,
-      monthlyNet: monthlyNet,
-      weeklyNet: weeklyNet
+      // NEW: monthly flows
+      dist: new Array(n).fill(0),
+      tax: new Array(n).fill(0),
+      bills: new Array(n).fill(0),
+      billsShort: new Array(n).fill(0)
     };
 
-    let assetListHtml = '<ul class="asset-list">';
-    assets.forEach(function (a) {
-      assetListHtml += '<li>' + a.name + ': <strong>$' + formatMoney(a.balance) + '</strong></li>';
-    });
-    assetListHtml += '</ul>';
+    const buySignal = buildBuySchedule(dates, freq);
+    const monthEnd = buildMonthEndSchedule(dates);
 
-    const s = lastSummary;
+    const dailyRate = (marginRateAPR/100) / (Number(dayCount) || 365);
+    const dailyIncomeRate = (incomeYieldAPR/100) / (Number(dayCount) || 365);
 
-    const summaryCards =
-      '<div class="summary-grid">'
-      + '  <div class="summary-card">'
-      + '    <div class="summary-label">Final total balance</div>'
-      + '    <div class="summary-value primary">$' + formatMoney(s.finalBalance) + '</div>'
-      + '    <div class="summary-sub">After ' + years + ' year' + (years > 1 ? 's' : '') + '</div>'
-      + '  </div>'
-      + '  <div class="summary-card">'
-      + '    <div class="summary-label">Total contributions</div>'
-      + '    <div class="summary-value">$' + formatMoney(s.totalContrib) + '</div>'
-      + '    <div class="summary-sub">Principal you added</div>'
-      + '  </div>'
-      + '  <div class="summary-card">'
-      + '    <div class="summary-label">Total growth</div>'
-      + '    <div class="summary-value ' + (s.totalGrowth >= 0 ? 'positive' : 'negative') + '">'
-      + '      $' + formatMoney(s.totalGrowth)
-      + '    </div>'
-      + '    <div class="summary-sub">Market gains / losses</div>'
-      + '  </div>'
-      + '  <div class="summary-card">'
-      + '    <div class="summary-label">Total net income received</div>'
-      + '    <div class="summary-value">$' + formatMoney(s.totalPaidOutNet) + '</div>'
-      + '    <div class="summary-sub">After tax, over full period</div>'
-      + '  </div>'
-      + '</div>';
+    // Monthly distribution approximation:
+    // dist_month = incomeSleeveValue * (incomeYieldAPR / 12)
+    // We trigger on the last market day of each month.
+    const monthlyIncomeRate = (incomeYieldAPR/100) / 12;
 
-    let tableHtml =
-      '<h4 class="results-heading">Year-by-year breakdown</h4>'
-      + '<div class="table-wrapper">'
-      + '<table class="projection-table">'
-      + '<thead>'
-      + '<tr>'
-      + '<th>Year</th>'
-      + '<th>Total contributions</th>'
-      + '<th>Total growth</th>'
-      + '<th>Total balance</th>'
-      + '<th>Distributions (year)</th>'
-      + '<th>Income paid out, gross (year)</th>'
-      + '<th>Income paid out, net (year)</th>'
-      + '</tr>'
-      + '</thead>'
-      + '<tbody>';
+    const split = clamp((Number(incomeSplit) || 0)/100, 0, 1);
+    const taxRate = clamp((Number(taxRatePct) || 0)/100, 0, 0.95);
 
-    lastRows.forEach(function (row) {
-      tableHtml +=
-        '<tr>'
-        + '<td>' + row.year + '</td>'
-        + '<td>$' + formatMoney(row.totalContrib) + '</td>'
-        + '<td>$' + formatMoney(row.growth) + '</td>'
-        + '<td>$' + formatMoney(row.totalBalance) + '</td>'
-        + '<td>$' + formatMoney(row.yearDist) + '</td>'
-        + '<td>$' + formatMoney(row.yearPayoutGross) + '</td>'
-        + '<td>$' + formatMoney(row.yearPayoutNet) + '</td>'
-        + '</tr>';
-    });
-
-    tableHtml +=
-      '</tbody>'
-      + '</table>'
-      + '</div>'
-      + '<div class="table-download-row">'
-      + '  <button id="tableCsvBtn" type="button" class="csv-button small">Download table CSV</button>'
-      + '</div>';
-
-    const summaryHtml =
-      summaryCards
-      + '<div class="results-section">'
-      + '  <h4>Final balances by asset</h4>'
-      + assetListHtml
-      + '</div>'
-      + '<div class="results-section">'
-      + '  <h4>Distributions over entire period (all assets)</h4>'
-      + '  <p>Total distributions generated: <strong style="color:#ef5122">$' + formatMoney(s.totalDistributions) + '</strong></p>'
-      + '  <p>Total reinvested into assets: <strong style="color:#ef5122">$' + formatMoney(s.totalReinvested) + '</strong></p>'
-      + '  <p>Total income paid out (gross): <strong style="color:#ef5122">$' + formatMoney(s.totalPaidOutGross) + '</strong></p>'
-      + '  <p>Total tax on income: <strong style="color:#ef5122">$' + formatMoney(s.totalTaxPaid) + '</strong></p>'
-      + '  <p>Total income received (net after tax): <strong style="color:#ef5122">$' + formatMoney(s.totalPaidOutNet) + '</strong></p>'
-      + '</div>'
-      + '<div class="results-section">'
-      + '  <h4>Income run-rate (last year)</h4>'
-      + '  <div class="income-grid">'
-      + '    <div>'
-      + '      <p class="income-heading">Gross (before tax)</p>'
-      + '      <p>Annual: <strong style="color:#ef5122">$' + formatMoney(s.annualGrossIncome) + '</strong></p>'
-      + '      <p>Quarterly: <strong style="color:#ef5122">$' + formatMoney(s.quarterlyGross) + '</strong></p>'
-      + '      <p>Monthly: <strong style="color:#ef5122">$' + formatMoney(s.monthlyGross) + '</strong></p>'
-      + '      <p>Weekly: <strong style="color:#ef5122">$' + formatMoney(s.weeklyGross) + '</strong></p>'
-      + '    </div>'
-      + '    <div>'
-      + '      <p class="income-heading">Net (after tax)</p>'
-      + '      <p>Annual: <strong style="color:#ef5122">$' + formatMoney(s.annualNetIncome) + '</strong></p>'
-      + '      <p>Quarterly: <strong style="color:#ef5122">$' + formatMoney(s.quarterlyNet) + '</strong></p>'
-      + '      <p>Monthly: <strong style="color:#ef5122">$' + formatMoney(s.monthlyNet) + '</strong></p>'
-      + '      <p>Weekly: <strong style="color:#ef5122">$' + formatMoney(s.weeklyNet) + '</strong></p>'
-      + '    </div>'
-      + '  </div>'
-      + '</div>';
-
-    resultsDiv.innerHTML = summaryHtml + tableHtml;
-
-    const tableCsvBtn = document.getElementById("tableCsvBtn");
-    if (tableCsvBtn) tableCsvBtn.addEventListener("click", downloadCSV);
-
-    updateCharts(lastRows, assets);
-  }
-
-  /* ================================
-     YEAR RANGE + NAVIGATOR
-  ================================= */
-  function updateYearLabel() {
-    if (!yearRangeLabelSpan || !fullLabels.length) return;
-    const s = currentStartIndex + 1;
-    const e = currentEndIndex + 1;
-    yearRangeLabelSpan.textContent = (s === e) ? ("Year " + s) : ("Year " + s + " – Year " + e);
-  }
-
-  function updateNavigatorHandles() {
-    if (!navWrapper || !navHandleStart || !navHandleEnd || !navRangeShade || !fullLabels.length) return;
-    const maxIndex = fullLabels.length - 1 || 1;
-    const startPct = (currentStartIndex / maxIndex) * 100;
-    const endPct = (currentEndIndex / maxIndex) * 100;
-
-    navHandleStart.style.left = startPct + "%";
-    navHandleEnd.style.left = endPct + "%";
-    navRangeShade.style.left = startPct + "%";
-    navRangeShade.style.width = Math.max(endPct - startPct, 0) + "%";
-  }
-
-  function handleNavigatorDragEvent(e) {
-    if (!draggingHandle || !navWrapper || !fullLabels.length) return;
-    const rect = navWrapper.getBoundingClientRect();
-    const clientX = (e.touches && e.touches.length) ? e.touches[0].clientX : e.clientX;
-    let pct = (clientX - rect.left) / rect.width;
-    if (pct < 0) pct = 0;
-    if (pct > 1) pct = 1;
-
-    const maxIndex = fullLabels.length - 1;
-    const idx = Math.round(pct * maxIndex);
-
-    if (draggingHandle === "start") currentStartIndex = Math.min(idx, currentEndIndex);
-    else if (draggingHandle === "end") currentEndIndex = Math.max(idx, currentStartIndex);
-
-    applyYearWindow();
-  }
-
-  function applyYearWindow() {
-    if (!projectionChart || !fullLabels.length || !fullDatasets.length) return;
-
-    const start = Math.max(0, Math.min(currentStartIndex, fullLabels.length - 1));
-    const end = Math.max(start, Math.min(currentEndIndex, fullLabels.length - 1));
-    currentStartIndex = start;
-    currentEndIndex = end;
-
-    const windowLabels = fullLabels.slice(start, end + 1);
-    const windowDatasets = fullDatasets.map(function (ds, i) {
-      return {
-        label: ds.label,
-        data: ds.data.slice(start, end + 1),
-        tension: ds.tension,
-        borderWidth: ds.borderWidth,
-        borderColor: ds.borderColor,
-        borderDash: ds.borderDash,
-        fill: ds.fill,
-        hidden: datasetHidden[i] || false,
-        pointRadius: ds.pointRadius,
-        pointHoverRadius: ds.pointHoverRadius
-      };
-    });
-
-    projectionChart.data.labels = windowLabels;
-    projectionChart.data.datasets = windowDatasets;
-    projectionChart.update();
-
-    updateYearLabel();
-    updateNavigatorHandles();
-  }
-
-  function initYearRangeControls(totalYears) {
-    const container = document.getElementById("yearRangeControls");
-    if (!container) return;
-    container.innerHTML = "";
-    if (totalYears <= 1) return;
-
-    container.innerHTML =
-      '<div class="year-range-header">'
-      + '  <span class="range-label">View years</span>'
-      + '  <span id="yearRangeLabel" class="range-display">Year 1 – Year ' + totalYears + '</span>'
-      + '</div>';
-
-    yearRangeLabelSpan = document.getElementById("yearRangeLabel");
-    updateYearLabel();
-  }
-
-  function initNavigatorControls(totalYears) {
-    navWrapper = document.getElementById("navigatorWrapper");
-    navHandleStart = document.getElementById("navHandleStart");
-    navHandleEnd = document.getElementById("navHandleEnd");
-    navRangeShade = document.getElementById("navRangeShade");
-
-    if (!navWrapper || !navHandleStart || !navHandleEnd || !navRangeShade) return;
-
-    if (totalYears <= 1) {
-      navWrapper.style.display = "none";
-      return;
+    function valueOf(ticker, i){ return shares[ticker] * prices[ticker][i]; }
+    function pv(i){
+      let v = 0;
+      for (const t of allTickers) v += valueOf(t, i);
+      return v;
     }
-    navWrapper.style.display = "block";
-
-    if (!navigatorInitialized) {
-      const startDrag = function (type) {
-        return function (e) {
-          draggingHandle = type;
-          e.preventDefault();
-        };
-      };
-      const moveDrag = function (e) {
-        if (!draggingHandle) return;
-        handleNavigatorDragEvent(e);
-      };
-      const endDrag = function () { draggingHandle = null; };
-
-      ["mousedown", "touchstart"].forEach(function (evt) {
-        navHandleStart.addEventListener(evt, startDrag("start"));
-        navHandleEnd.addEventListener(evt, startDrag("end"));
-      });
-      ["mousemove", "touchmove"].forEach(function (evt) {
-        document.addEventListener(evt, moveDrag);
-      });
-      ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach(function (evt) {
-        document.addEventListener(evt, endDrag);
-      });
-
-      navigatorInitialized = true;
+    function incValue(i){
+      let v = 0;
+      for (const t of incTickers) v += valueOf(t, i);
+      return v;
     }
 
-    updateNavigatorHandles();
-  }
+    function sleeveWeightsForRebalance(i, sleeveTickers, sleeveWeights){
+      let w = sleeveWeights.slice();
+      if (!rebalanceBuys) return w;
 
-  /* ================================
-     CHARTS
-  ================================= */
-  function updateCharts(rows, assetsMeta) {
-    const mainCanvas = document.getElementById("projectionChart");
-    const allocCanvas = document.getElementById("allocationChart");
-    const incomeCanvas = document.getElementById("incomeChart");
-    const navigatorCanvas = document.getElementById("navigatorChart");
-    const togglesContainer = document.getElementById("assetToggles");
-    if (!rows || rows.length === 0) return;
+      let sleeveV = 0;
+      const curV = {};
+      sleeveTickers.forEach(t => { curV[t] = valueOf(t, i); sleeveV += curV[t]; });
 
-    const labels = rows.map(function (r) { return "Year " + r.year; });
-    const totalBalances = rows.map(function (r) { return r.totalBalance; });
+      if (sleeveV <= 0) return w;
 
-    let cumulative = 0;
-    const cumulativeNetIncome = rows.map(function (r) {
-      cumulative += r.yearPayoutNet;
-      return cumulative;
-    });
+      const curW = {};
+      sleeveTickers.forEach(t => curW[t] = curV[t] / sleeveV);
 
-    const assetColors = [
-      "#36a2eb", "#4bc0c0", "#9966ff", "#ff9f40", "#ff6384",
-      "#a3e048", "#f7d038", "#eb7532", "#e6261f", "#3b7dd8"
-    ];
-
-    const isNarrowScreen = window.innerWidth <= 600;
-
-    const lineDatasets = [
-      {
-        label: "Total balance",
-        data: totalBalances,
-        tension: 0.25,
-        borderWidth: 2,
-        borderColor: "#ef5122",
-        fill: false,
-        pointRadius: isNarrowScreen ? 0 : 3,
-        pointHoverRadius: isNarrowScreen ? 0 : 5
-      },
-      {
-        label: "Cumulative net income (after tax)",
-        data: cumulativeNetIncome,
-        tension: 0.25,
-        borderWidth: 1.5,
-        borderColor: "#ffe08c",
-        borderDash: [6, 4],
-        fill: false,
-        pointRadius: isNarrowScreen ? 0 : 3,
-        pointHoverRadius: isNarrowScreen ? 0 : 5
-      }
-    ];
-
-    assetsMeta.forEach(function (asset, index) {
-      const series = rows.map(function (r) {
-        return (r.balancesByAsset && r.balancesByAsset[index] != null) ? r.balancesByAsset[index] : 0;
-      });
-      lineDatasets.push({
-        label: asset.name,
-        data: series,
-        tension: 0.25,
-        borderWidth: 1.5,
-        borderColor: assetColors[index % assetColors.length],
-        fill: false,
-        pointRadius: isNarrowScreen ? 0 : 2,
-        pointHoverRadius: isNarrowScreen ? 0 : 4
-      });
-    });
-
-    fullLabels = labels;
-    fullDatasets = lineDatasets;
-    datasetHidden = new Array(fullDatasets.length).fill(false);
-    currentStartIndex = 0;
-    currentEndIndex = labels.length - 1;
-
-    const commonScales = {
-      x: {
-        offset: false,
-        ticks: {
-          color: "#f5f5f5",
-          font: { size: isNarrowScreen ? 9 : 11 },
-          autoSkip: true,
-          maxTicksLimit: isNarrowScreen ? 6 : 10,
-          padding: 8,
-          callback(value) {
-            const label = this.getLabelForValue(value);
-            return label.replace("Year ", "");
-          }
-        },
-        grid: { color: "rgba(255,255,255,0.08)" }
-      },
-      y: {
-        ticks: {
-          color: "#f5f5f5",
-          font: { size: isNarrowScreen ? 9 : 10 },
-          maxTicksLimit: 6,
-          callback(value) { return "$" + value.toLocaleString(); }
-        },
-        grid: { color: "rgba(255,255,255,0.08)" }
-      }
-    };
-
-    if (mainCanvas) {
-      const ctx = mainCanvas.getContext("2d");
-      const options = {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
-        layout: { padding: { top: 10, left: 8, right: 8, bottom: 90 } },
-        scales: commonScales
-      };
-
-      if (!projectionChart) {
-        projectionChart = new Chart(ctx, { type: "line", data: { labels: [], datasets: [] }, options });
-      } else {
-        projectionChart.options = options;
-      }
+      const raw = sleeveTickers.map((t,idx) => Math.max(0, sleeveWeights[idx] - (curW[t] || 0)));
+      const sum = raw.reduce((p,c)=>p+c,0);
+      if (sum > 0) w = raw.map(x => x/sum);
+      return w;
     }
 
-    if (navigatorCanvas) {
-      const ctxNav = navigatorCanvas.getContext("2d");
-      const navData = {
-        labels: labels,
-        datasets: [{
-          label: "Navigator",
-          data: totalBalances,
-          tension: 0.25,
-          borderWidth: 1,
-          borderColor: "#ef5122",
-          fill: true,
-          backgroundColor: "rgba(239,81,34,0.18)",
-          pointRadius: 0
-        }]
-      };
-      const navOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { enabled: false } },
-        scales: { x: { display: false }, y: { display: false } }
-      };
-
-      if (navigatorChart) {
-        navigatorChart.data = navData;
-        navigatorChart.options = navOptions;
-        navigatorChart.update();
-      } else {
-        navigatorChart = new Chart(ctxNav, { type: "line", data: navData, options: navOptions });
-      }
+    function maxBorrowAllowed(i){
+      const v = pv(i);
+      return Math.max(0, maxLTV * v);
     }
 
-    initYearRangeControls(labels.length);
-    initNavigatorControls(labels.length);
-    applyYearWindow();
+    function borrowToCash(i, amount, bucket){
+      if (!useMargin) return 0;
+      if (marginPolicy === "off") return 0;
+      if (amount <= 0) return 0;
 
-    if (togglesContainer) {
-      togglesContainer.innerHTML = "";
+      const allowed = maxBorrowAllowed(i);
+      const headroom = Math.max(0, allowed - debt);
+      const b = clamp(amount, 0, headroom);
 
-      if (fullDatasets.length > 2) {
-        fullDatasets.forEach(function (ds, idx) {
-          if (idx < 2) return;
-          const label = ds.label || ("Asset " + (idx - 1));
-          const wrap = document.createElement("label");
-          wrap.className = "asset-toggle";
-
-          const input = document.createElement("input");
-          input.type = "checkbox";
-          input.checked = !datasetHidden[idx];
-          input.dataset.index = String(idx);
-          input.addEventListener("change", function () {
-            const i = parseInt(this.dataset.index, 10);
-            datasetHidden[i] = !this.checked;
-            applyYearWindow();
-          });
-
-          const span = document.createElement("span");
-          span.textContent = label;
-
-          wrap.appendChild(input);
-          wrap.appendChild(span);
-          togglesContainer.appendChild(wrap);
-        });
-
-        const btnWrap = document.createElement("div");
-        btnWrap.className = "asset-toggle-buttons";
-
-        const hideAll = document.createElement("button");
-        hideAll.type = "button";
-        hideAll.textContent = "Hide all assets";
-        hideAll.addEventListener("click", function () {
-          for (let i = 2; i < datasetHidden.length; i++) datasetHidden[i] = true;
-          togglesContainer.querySelectorAll("input[type=checkbox]").forEach(function (c) { c.checked = false; });
-          applyYearWindow();
-        });
-
-        const showAll = document.createElement("button");
-        showAll.type = "button";
-        showAll.textContent = "Show all assets";
-        showAll.addEventListener("click", function () {
-          for (let i = 2; i < datasetHidden.length; i++) datasetHidden[i] = false;
-          togglesContainer.querySelectorAll("input[type=checkbox]").forEach(function (c) { c.checked = true; });
-          applyYearWindow();
-        });
-
-        const resetZoomBtn = document.createElement("button");
-        resetZoomBtn.type = "button";
-        resetZoomBtn.textContent = "Reset zoom";
-        resetZoomBtn.addEventListener("click", function () {
-          if (projectionChart && projectionChart.resetZoom) projectionChart.resetZoom();
-          currentStartIndex = 0;
-          currentEndIndex = fullLabels.length ? fullLabels.length - 1 : 0;
-          applyYearWindow();
-        });
-
-        btnWrap.appendChild(hideAll);
-        btnWrap.appendChild(showAll);
-        btnWrap.appendChild(resetZoomBtn);
-        togglesContainer.appendChild(btnWrap);
+      if (b > 0){
+        debt += b;
+        cash += b;
+        if (bucket === "buy") ev.borrowBuy[i] += b;
+        else ev.borrowAdj[i] += b;
       }
+      return b;
     }
 
-    const finalRow = rows[rows.length - 1];
+    function payDownDebt(i, amount){
+      const p = clamp(amount, 0, Math.min(cash, debt));
+      if (p > 0){
+        debt -= p;
+        cash -= p;
+        ev.paydown[i] += p;
+      }
+      return p;
+    }
 
-    if (allocCanvas && assetsMeta && assetsMeta.length && finalRow.balancesByAsset) {
-      const ctx2 = allocCanvas.getContext("2d");
-      const allocLabels = assetsMeta.map(function (a) { return a.name; });
-      const allocData = finalRow.balancesByAsset;
-      const doughnutData = {
-        labels: allocLabels,
-        datasets: [{
-          data: allocData,
-          backgroundColor: assetColors.slice(0, allocLabels.length),
-          borderWidth: 0
-        }]
-      };
-      const doughnutOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: "bottom", labels: { color: "#f5f5f5", usePointStyle: true } },
-          tooltip: {
-            callbacks: {
-              label: function (ctx) {
-                const label = ctx.label || "";
-                const value = ctx.parsed || 0;
-                const arr = ctx.dataset.data || [];
-                const total = arr.reduce(function (a, b) { return a + b; }, 0);
-                const pct = total ? ((value / total) * 100).toFixed(1) : "0.0";
-                return label + ": $" + formatMoney(value) + " (" + pct + "%)";
-              }
-            }
+    function allocateToSleeve(i, amt, sleeveTickers, sleeveWeights){
+      if (amt <= 0 || sleeveTickers.length === 0) return;
+
+      const w = sleeveWeightsForRebalance(i, sleeveTickers, sleeveWeights);
+
+      for (let k=0;k<sleeveTickers.length;k++){
+        const t = sleeveTickers[k];
+        const a = amt * (w[k] || 0);
+        if (a <= 0) continue;
+        shares[t] += a / prices[t][i];
+        cash -= a;
+        ev.buy[i] += a;
+      }
+      if (Math.abs(cash) < 1e-8) cash = 0;
+    }
+
+    function computeTargetRatio(i){
+      if (incomeMode !== "price_band") return targetRatio;
+      const v = pv(i);
+      const minV = Math.max(0, Number(bandMin) || 0);
+      const maxV = Math.max(0, Number(bandMax) || 0);
+      if (maxV <= 0) return 0;
+      if (v >= minV && v <= maxV) return targetRatio;
+      return 0;
+    }
+
+    // NEW: month-end distribution + bills/taxes routing
+    function applyMonthEndRouting(i, interestToday){
+      if (!billsOn) return;
+
+      // Generate monthly distribution from income sleeve
+      let dist = 0;
+      if (incomeOn && incTickers.length > 0 && monthEnd[i]){
+        dist = incValue(i) * monthlyIncomeRate;
+        if (dist > 0){
+          cash += dist;
+          ev.dist[i] = dist;
+        }
+      }
+
+      if (!monthEnd[i] || dist <= 0) return;
+
+      // Priority 1: Ensure interest isn't starving (optional: top-up by paying down "new" interest only)
+      // Here: we do NOT auto-pay interest from dist directly because interest is already capitalized daily.
+      // Instead, we allow dist to pay down debt per incomeMode (below). Bills/taxes occur first AFTER taxes calc, per your note.
+      // However you requested order: interest → taxes → bills → principal.
+      // We'll interpret "interest" as: pay down today's accrued interest amount first (reducing debt by that amount).
+      if (useMargin && interestToday > 0){
+        const paidInt = payDownDebt(i, Math.min(cash, interestToday));
+        // (paidInt is included inside ev.paydown)
+      }
+
+      // Priority 2: Taxes (on remaining distribution pool)
+      // Use "remaining distribution pool" as cash increase from dist; we approximate by applying taxes on dist net of interest paydown from cash.
+      // We compute tax on dist (less interest payment if it used dist).
+      let taxBase = dist;
+      const taxAmt = Math.max(0, taxBase * taxRate);
+      const taxPay = Math.min(cash, taxAmt);
+
+      if (taxPay > 0){
+        if (taxHandling === "reserve"){
+          taxReserve += taxPay;
+        }
+        // If taxHandling === "pay", we assume it leaves the system; either way it reduces cash.
+        cash -= taxPay;
+        ev.tax[i] = taxPay;
+      }
+
+      // Priority 3: Bills
+      const billsNeed = Math.max(0, Number(billsMonthly) || 0);
+      if (billsNeed > 0){
+        const pay = Math.min(cash, billsNeed);
+        if (pay > 0){
+          cash -= pay;
+          ev.bills[i] = pay;
+          billsPaidCum += pay;
+        }
+        const short = billsNeed - pay;
+        if (short > 0){
+          if (billsFallback === "cash"){
+            // attempt from any remaining cash (already 0 by definition), so short remains
+            ev.billsShort[i] = short;
+          } else {
+            ev.billsShort[i] = short;
           }
         }
-      };
-
-      if (allocationChart) {
-        allocationChart.data = doughnutData;
-        allocationChart.options = doughnutOptions;
-        allocationChart.update();
-      } else {
-        allocationChart = new Chart(ctx2, { type: "doughnut", data: doughnutData, options: doughnutOptions });
       }
     }
 
-    if (incomeCanvas && lastSummary) {
-      const ctx3 = incomeCanvas.getContext("2d");
-      const s = lastSummary;
-      const incomeData = {
-        labels: ["Reinvested distributions", "Net income received", "Taxes on income"],
-        datasets: [{
-          data: [s.totalReinvested, s.totalPaidOutNet, s.totalTaxPaid],
-          backgroundColor: ["#4bc0c0", "#ef5122", "#ffcd56"],
-          borderWidth: 0
-        }]
-      };
-      const incomeOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: "bottom", labels: { color: "#f5f5f5", usePointStyle: true } },
-          tooltip: {
-            callbacks: {
-              label: function (ctx) {
-                const label = ctx.label || "";
-                const value = ctx.parsed || 0;
-                const arr = ctx.dataset.data || [];
-                const total = arr.reduce(function (a, b) { return a + b; }, 0);
-                const pct = total ? ((value / total) * 100).toFixed(1) : "0.0";
-                return label + ": $" + formatMoney(value) + " (" + pct + "%)";
-              }
-            }
-          }
-        }
-      };
+    function marginManagementStep(i, incomeToday, interestToday){
+      if (!useMargin || marginPolicy === "off") return;
 
-      if (incomeChart) {
-        incomeChart.data = incomeData;
-        incomeChart.options = incomeOptions;
-        incomeChart.update();
-      } else {
-        incomeChart = new Chart(ctx3, { type: "doughnut", data: incomeData, options: incomeOptions });
+      const v = pv(i);
+      const ltv = (v > 0) ? (debt / v) : 0;
+      coverArr[i] = (interestToday > 0) ? (incomeToday / interestToday) : (incomeToday > 0 ? Infinity : NaN);
+
+      if (!incomeOn){ targetDevArr[i] = 0; return; }
+
+      if (incomeMode === "interest_only"){
+        // After bills/taxes, keep debt stable, but allow paying down small amounts via cash if desired:
+        // Here we do NOT auto-pay principal beyond interest paydown in month-end routing.
+        targetDevArr[i] = 0;
+        return;
       }
+
+      if (incomeMode === "interest_plus_principal"){
+        // Allow using excess cash (including distributions left over) to pay down debt progressively.
+        payDownDebt(i, cash);
+        targetDevArr[i] = 0;
+        return;
+      }
+
+      const target = computeTargetRatio(i);
+      targetDevArr[i] = ltv - target;
+
+      if (!isAdjustDay(i, dates, adjustFreq)) return;
+
+      const desiredDebt = Math.max(0, target * v);
+      const delta = desiredDebt - debt;
+
+      if (delta < 0){
+        payDownDebt(i, Math.min(cash, Math.abs(delta)));
+      } else if (delta > 0){
+        if (allowTargetBorrow) borrowToCash(i, delta, "adj");
+      }
+    }
+
+    for (let i=0;i<n;i++){
+      // Interest accrual (capitalized into debt)
+      let interestToday = 0;
+      if (useMargin && debt > 0 && dailyRate > 0){
+        interestToday = debt * dailyRate;
+        debt += interestToday;
+        ev.interest[i] = interestToday;
+      }
+
+      // Daily income accrual (kept for coverage metric; NOT the “monthly distributions”)
+      let incomeToday = 0;
+      if (incomeOn && incTickers.length > 0 && dailyIncomeRate > 0){
+        incomeToday = incValue(i) * dailyIncomeRate;
+        ev.income[i] = incomeToday;
+      }
+
+      // Month-end: add distributions + route to taxes/bills (and optionally interest)
+      applyMonthEndRouting(i, interestToday);
+
+      // Margin management (post bills/taxes; uses whatever cash remains)
+      marginManagementStep(i, incomeToday, interestToday);
+
+      // DCA buy day
+      if (buySignal[i]){
+        cash += dcaAmt;
+        ev.dep[i] = dcaAmt;
+
+        if (useMargin && marginPolicy === "always"){
+          const v = pv(i);
+          const desiredDebt = maxLTV * v;
+          const extra = Math.max(0, desiredDebt - debt);
+          borrowToCash(i, extra, "buy");
+        }
+
+        if (useMargin && marginPolicy === "assist"){
+          const minInvest = Math.max(0, dcaAmt);
+          if (cash < minInvest) borrowToCash(i, (minInvest - cash), "buy");
+        }
+
+        const investable = cash;
+        if (incTickers.length === 0){
+          allocateToSleeve(i, investable, coreTickers, coreWeights);
+        } else {
+          const toIncome = investable * split;
+          const toCore = investable - toIncome;
+          allocateToSleeve(i, toIncome, incTickers, incWeights);
+          allocateToSleeve(i, toCore, coreTickers, coreWeights);
+        }
+      }
+
+      const v = pv(i);
+      const equity = v + cash - debt;
+      const ltv = (v > 0) ? (debt / v) : 0;
+
+      equityArr[i] = equity;
+      debtArr[i] = debt;
+      ltvArr[i] = ltv;
+
+      taxReserveArr[i] = taxReserve;
+      billsPaidArr[i] = billsPaidCum;
+
+      if (!isFinite(coverArr[i])){
+        coverArr[i] = (ev.interest[i] > 0) ? (ev.income[i] / ev.interest[i]) : (ev.income[i] > 0 ? Infinity : NaN);
+      }
+    }
+
+    return { dates, equityArr, debtArr, ltvArr, coverArr, targetDevArr, taxReserveArr, billsPaidArr, events: ev };
+  }
+
+  const ctx = el.canvas.getContext("2d");
+
+  function resizeCanvasToCSS(){
+    const rect = el.canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    el.canvas.width = Math.round(rect.width * dpr);
+    el.canvas.height = Math.round(rect.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function drawGrid(w,h){
+    ctx.clearRect(0,0,w,h);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    const stepY = h / 7;
+    for (let i=1;i<7;i++){
+      ctx.beginPath();
+      ctx.moveTo(0, i*stepY);
+      ctx.lineTo(w, i*stepY);
+      ctx.stroke();
+    }
+    const stepX = w / 10;
+    for (let i=1;i<10;i++){
+      ctx.beginPath();
+      ctx.moveTo(i*stepX, 0);
+      ctx.lineTo(i*stepX, h);
+      ctx.stroke();
     }
   }
 
-  /* ================================
-     CSV / PNG EXPORTS
-  ================================= */
-  function downloadCSV() {
-    if (!lastRows || lastRows.length === 0 || !lastSummary) {
-      alert("Please run a calculation first.");
+  function minMax(arr, upto){
+    const a = arr.slice(0, Math.max(1, upto+1));
+    let mn = Infinity, mx = -Infinity;
+    for (const v of a){
+      if (!isFinite(v)) continue;
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+    if (!isFinite(mn) || !isFinite(mx) || mn === mx){
+      mn = 0; mx = (isFinite(mx) ? mx : 1) || 1;
+    }
+    return { mn, mx };
+  }
+
+  function plotLine(arr, upto, w, h, pad, stroke, range, alpha=1){
+    const n = arr.length;
+    if (!n) return;
+    const x0 = pad, x1 = w - pad;
+    const y0 = pad, y1 = h - pad;
+    const mn = range.mn, mx = range.mx;
+    const span = (mx - mn) || 1;
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = stroke;
+    ctx.globalAlpha = alpha;
+
+    ctx.beginPath();
+    for (let i=0;i<=upto;i++){
+      const x = x0 + (x1-x0) * (i / (n-1));
+      const y = y1 - (y1-y0) * ((arr[i]-mn)/span);
+      if (i===0) ctx.moveTo(x,y);
+      else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawCursor(i, w, h, pad, n){
+    const x0 = pad, x1 = w - pad;
+    const x = x0 + (x1-x0) * (i / (n-1));
+    ctx.strokeStyle = "rgba(239,81,34,0.55)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, pad);
+    ctx.lineTo(x, h-pad);
+    ctx.stroke();
+  }
+
+  function drawTimelineTicks(i, w, h, pad){
+    const zoneH = 64;
+    const baseY = h - pad - 6;
+    const topY = baseY - zoneH;
+    const x0 = pad, x1 = w - pad;
+    const n = state.cashSim.dates.length;
+
+    ctx.fillStyle = "rgba(255,255,255,0.03)";
+    ctx.fillRect(x0, topY, x1-x0, zoneH);
+
+    const ev = state.marginSim.events;
+
+    const maxDep = Math.max(...ev.dep.slice(0,i+1), 1);
+    const maxBuy = Math.max(...ev.buy.slice(0,i+1), 1);
+    const maxDist = Math.max(...ev.dist.slice(0,i+1), 1);
+    const maxTax = Math.max(...ev.tax.slice(0,i+1), 1);
+    const maxBills = Math.max(...ev.bills.slice(0,i+1), 1);
+
+    for (let k=0;k<=i;k++){
+      const x = x0 + (x1-x0) * (k/(n-1));
+
+      if (ev.dep[k] > 0){
+        const hh = 10 * (ev.dep[k]/maxDep);
+        ctx.strokeStyle = "rgba(245,245,245,0.55)";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, baseY); ctx.lineTo(x, baseY-hh); ctx.stroke();
+      }
+      if (ev.buy[k] > 0){
+        const hh = 14 * (ev.buy[k]/maxBuy);
+        ctx.strokeStyle = "rgba(239,81,34,0.75)";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, baseY-12); ctx.lineTo(x, baseY-12-hh); ctx.stroke();
+      }
+      if (ev.dist[k] > 0){
+        const hh = 10 * (ev.dist[k]/maxDist);
+        ctx.strokeStyle = "rgba(245,245,245,0.40)";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, baseY-28); ctx.lineTo(x, baseY-28-hh); ctx.stroke();
+      }
+      if (ev.tax[k] > 0){
+        const hh = 10 * (ev.tax[k]/maxTax);
+        ctx.strokeStyle = "rgba(245,245,245,0.22)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(x, baseY-40); ctx.lineTo(x, baseY-40-hh); ctx.stroke();
+      }
+      if (ev.bills[k] > 0){
+        const hh = 10 * (ev.bills[k]/maxBills);
+        ctx.strokeStyle = "rgba(245,245,245,0.80)";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, baseY-52); ctx.lineTo(x, baseY-52-hh); ctx.stroke();
+      }
+    }
+
+    ctx.fillStyle = "rgba(245,245,245,0.55)";
+    ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace";
+    ctx.fillText("Deposit", x0+8, topY+16);
+    ctx.fillStyle = "rgba(239,81,34,0.85)";
+    ctx.fillText("Buy", x0+86, topY+16);
+    ctx.fillStyle = "rgba(245,245,245,0.40)";
+    ctx.fillText("Dist", x0+126, topY+16);
+    ctx.fillStyle = "rgba(245,245,245,0.22)";
+    ctx.fillText("Tax", x0+176, topY+16);
+    ctx.fillStyle = "rgba(245,245,245,0.80)";
+    ctx.fillText("Bills", x0+226, topY+16);
+  }
+
+  function updateRiskUI(i){
+    const maxLTV = state.meta.maxLTV;
+    const ltv = state.marginSim.ltvArr[i];
+    const cover = state.marginSim.coverArr[i];
+    const dev = state.marginSim.targetDevArr[i];
+
+    const marginActive = state.meta.useMargin;
+    if (!marginActive || maxLTV <= 0){
+      el.riskGrade.textContent = "OFF";
+      el.riskFill.style.width = "0%";
+      el.riskProx.textContent = "—";
+      el.riskDev.textContent = "—";
+      el.riskSignal.textContent = "Margin disabled";
       return;
     }
 
-    const finalRow = lastRows[lastRows.length - 1];
-    const s = lastSummary;
+    const prox = clamp(ltv / maxLTV, 0, 1.25);
+    el.riskFill.style.width = (clamp(prox,0,1) * 100).toFixed(1) + "%";
+    el.riskProx.textContent = (prox*100).toFixed(1) + "%";
+    el.riskDev.textContent = isFinite(dev) ? (dev >= 0 ? "+" : "") + fmtPct(dev) : "—";
 
-    let totalDistributions = 0;
-    let totalGrossPayout = 0;
-    let totalNetPayout = 0;
+    let grade = "LOW";
+    let signal = "Healthy buffer";
 
-    lastRows.forEach(function (row) {
-      totalDistributions += row.yearDist;
-      totalGrossPayout += row.yearPayoutGross;
-      totalNetPayout += row.yearPayoutNet;
-    });
+    if (prox >= 0.50){ grade = "MODERATE"; signal = "Leverage is material"; }
+    if (prox >= 0.70){ grade = "ELEVATED"; signal = "Stress can accelerate risk"; }
+    if (prox >= 0.85){ grade = "HIGH"; signal = "Close to limit"; }
+    if (prox >= 0.95){ grade = "CRITICAL"; signal = "Very low buffer"; }
+    if (prox >= 1.00){ grade = "LIMIT"; signal = "At or beyond max LTV"; }
 
-    const totalTax = totalGrossPayout - totalNetPayout;
-    const totalReinvested = totalDistributions - totalGrossPayout;
-
-    const lines = [];
-    lines.push("Summary");
-    lines.push("Metric,Value");
-    lines.push("Final total balance,$" + finalRow.totalBalance.toFixed(2));
-    lines.push("Total contributions,$" + finalRow.totalContrib.toFixed(2));
-    lines.push("Total growth,$" + finalRow.growth.toFixed(2));
-
-    if (lastAssetsMeta && lastAssetsMeta.length && finalRow.balancesByAsset) {
-      lastAssetsMeta.forEach(function (asset, index) {
-        const bal = finalRow.balancesByAsset[index] || 0;
-        lines.push("Final balance - " + asset.name + ",$" + bal.toFixed(2));
-      });
+    if (isFinite(cover) && cover >= 1 && prox < 0.95){
+      signal = "Income covers interest";
+    }
+    if (isFinite(cover) && cover < 1 && prox >= 0.70){
+      signal = "Income does not cover interest";
     }
 
-    lines.push("");
-    lines.push("Distributions over entire period (all assets),");
-    lines.push("Total distributions generated,$" + totalDistributions.toFixed(2));
-    lines.push("Total reinvested into assets,$" + totalReinvested.toFixed(2));
-    lines.push("Total income paid out (gross),$" + totalGrossPayout.toFixed(2));
-    lines.push("Total tax on income,$" + totalTax.toFixed(2));
-    lines.push("Total income received (net after tax),$" + totalNetPayout.toFixed(2));
+    el.riskGrade.textContent = grade;
+    el.riskSignal.textContent = signal;
 
-    lines.push("");
-    lines.push("Income run-rate (last year),");
-    lines.push("Gross (before tax),");
-    lines.push("Annual gross,$" + s.annualGrossIncome.toFixed(2));
-    lines.push("Quarterly gross,$" + s.quarterlyGross.toFixed(2));
-    lines.push("Monthly gross,$" + s.monthlyGross.toFixed(2));
-    lines.push("Weekly gross,$" + s.weeklyGross.toFixed(2));
-
-    lines.push("");
-    lines.push("Net (after tax),");
-    lines.push("Annual net,$" + s.annualNetIncome.toFixed(2));
-    lines.push("Quarterly net,$" + s.quarterlyNet.toFixed(2));
-    lines.push("Monthly net,$" + s.monthlyNet.toFixed(2));
-    lines.push("Weekly net,$" + s.weeklyNet.toFixed(2));
-
-    lines.push("");
-    lines.push("Year-by-year breakdown,");
-
-    const header = [
-      "Year",
-      "Total contributions",
-      "Total growth",
-      "Total balance",
-      "Distributions (year)",
-      "Income paid out gross (year)",
-      "Income paid out net (year)",
-      "Cumulative net income (after tax)"
-    ];
-
-    if (lastAssetsMeta && lastAssetsMeta.length) {
-      lastAssetsMeta.forEach(function (asset) {
-        header.push(asset.name + " balance (year end)");
-      });
-    }
-    lines.push(header.join(","));
-
-    let cumulativeNet = 0;
-    lastRows.forEach(function (row) {
-      cumulativeNet += row.yearPayoutNet;
-      const baseCols = [
-        row.year,
-        row.totalContrib.toFixed(2),
-        row.growth.toFixed(2),
-        row.totalBalance.toFixed(2),
-        row.yearDist.toFixed(2),
-        row.yearPayoutGross.toFixed(2),
-        row.yearPayoutNet.toFixed(2),
-        cumulativeNet.toFixed(2)
-      ];
-      const assetCols = [];
-      if (row.balancesByAsset && row.balancesByAsset.length) {
-        row.balancesByAsset.forEach(function (bal) {
-          assetCols.push((bal || 0).toFixed(2));
-        });
+    if (state.calloutsOn){
+      if (prox >= 0.95 && !state.alerted95){
+        state.alerted95 = true;
+        showAlert("Risk Alert: LTV is above 95% of max. Buffer is very low.");
+      } else if (prox >= 0.85 && !state.alerted85){
+        state.alerted85 = true;
+        showAlert("Risk Alert: LTV above 85% of max. You are close to the limit.");
+      } else if (prox >= 0.70 && !state.alerted70){
+        state.alerted70 = true;
+        showAlert("Risk Alert: LTV above 70% of max. Stress events matter more now.");
       }
-      lines.push(baseCols.concat(assetCols).join(","));
-    });
+    }
+  }
 
-    const csvContent = lines.join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const ctx2 = el.canvas.getContext("2d");
+
+  const state = {
+    built: false,
+    playing: false,
+    i: 0,
+    lastTs: 0,
+
+    cashSim: null,
+    marginSim: null,
+
+    meta: { name:"", useMargin:false, maxLTV:0 },
+    calloutsOn: true,
+
+    alerted70: false,
+    alerted85: false,
+    alerted95: false
+  };
+
+  function setControlsBuilt(on){
+    el.play.disabled = !on;
+    el.pause.disabled = !on;
+    el.step.disabled = !on;
+    el.toEnd.disabled = !on;
+  }
+
+  function drawFrame(i){
+    if (!state.built) return;
+
+    resizeCanvasToCSS();
+
+    const rect = el.canvas.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+    const pad = 18;
+
+    drawGrid(w,h);
+
+    const mode = el.mode.value;
+
+    const rCash = minMax(state.cashSim.equityArr, i);
+    const rMar  = minMax(state.marginSim.equityArr, i);
+    const rangeEq = { mn: Math.min(rCash.mn, rMar.mn), mx: Math.max(rCash.mx, rMar.mx) };
+
+    if (mode === "equity"){
+      plotLine(state.cashSim.equityArr, i, w, h, pad, "rgba(245,245,245,0.75)", rangeEq);
+      plotLine(state.marginSim.equityArr, i, w, h, pad, "rgba(239,81,34,0.95)", rangeEq);
+    } else if (mode === "debt"){
+      const rD = minMax(state.marginSim.debtArr, i);
+      plotLine(state.marginSim.debtArr, i, w, h, pad, "rgba(245,245,245,0.85)", rD);
+    } else {
+      plotLine(state.cashSim.equityArr, i, w, h, pad, "rgba(245,245,245,0.75)", rangeEq);
+      plotLine(state.marginSim.equityArr, i, w, h, pad, "rgba(239,81,34,0.95)", rangeEq);
+      const rD = minMax(state.marginSim.debtArr, i);
+      plotLine(state.marginSim.debtArr, i, w, h, pad, "rgba(245,245,245,0.85)", rD, 0.50);
+    }
+
+    drawCursor(i, w, h, pad, state.cashSim.dates.length);
+    drawTimelineTicks(i, w, h, pad);
+
+    const date = state.cashSim.dates[i] || "—";
+    const eqCash = state.cashSim.equityArr[i];
+    const eqMar  = state.marginSim.equityArr[i];
+    const debt   = state.marginSim.debtArr[i];
+    const ltv    = state.marginSim.ltvArr[i];
+    const cover  = state.marginSim.coverArr[i];
+    const taxRes = state.marginSim.taxReserveArr[i];
+    const billsP = state.marginSim.billsPaidArr[i];
+
+    el.kDate.textContent = date;
+    el.kEqCash.textContent = fmtUSD(eqCash);
+    el.kEqMargin.textContent = fmtUSD(eqMar);
+    el.kDebt.textContent = fmtUSD(debt);
+    el.kLTV.textContent = fmtPct(ltv);
+    el.kCover.textContent = (isFinite(cover) ? (cover === Infinity ? "∞" : cover.toFixed(2) + "x") : "—");
+    if (el.kTax) el.kTax.textContent = fmtUSD(taxRes);
+    if (el.kBills) el.kBills.textContent = fmtUSD(billsP);
+
+    updateRiskUI(i);
+
+    const totalDays = state.cashSim.dates.length;
+    const label = state.meta.name || "Simulated Account";
+    el.vizDesc.textContent = `${label} • Day ${i+1} / ${totalDays}`;
+  }
+
+  function tick(ts){
+    if (!state.playing){ state.lastTs = ts; return; }
+    const dt = (ts - state.lastTs) / 1000;
+    state.lastTs = ts;
+
+    const speed = Number(el.speed.value);
+    const advance = speed * dt;
+
+    const n = state.cashSim.dates.length;
+    state.i = Math.min(n-1, state.i + advance);
+
+    drawFrame(Math.floor(state.i));
+
+    if (Math.floor(state.i) >= n-1){
+      state.playing = false;
+      log("Reached end of simulation.");
+    } else {
+      requestAnimationFrame(tick);
+    }
+  }
+
+  function safeFileBase(){
+    const name = (state.meta?.name || "simulated-portfolio").trim() || "simulated-portfolio";
+    const clean = name.replace(/[^a-z0-9\-_]+/gi, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
+    const start = state.cashSim?.dates?.[0] || "";
+    const end = state.cashSim?.dates?.[state.cashSim.dates.length - 1] || "";
+    return `${clean}_${start}_to_${end}`.replace(/__+/g, "_");
+  }
+
+  function downloadBlob(blob, filename){
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "microdca_projection_detailed.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
     URL.revokeObjectURL(url);
   }
 
-  function downloadPNGFromChart(chart, filename) {
-    if (!chart) {
-      alert("Please run a calculation first.");
-      return;
-    }
-    const link = document.createElement("a");
-    link.href = chart.toBase64Image();
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  function downloadCanvasPNG(){
+    if (!state.built) { showAlert("Build a simulation first."); return; }
+    drawFrame(Math.floor(state.i));
+    const filename = `${safeFileBase()}.png`;
+    el.canvas.toBlob((blob) => {
+      if (!blob) { showAlert("PNG export failed."); return; }
+      downloadBlob(blob, filename);
+      log(`Exported PNG: ${filename}`);
+    }, "image/png");
   }
 
-  function downloadProjectionPNG() { downloadPNGFromChart(projectionChart, "microdca_projection_chart.png"); }
-  function downloadAllocationPNG() { downloadPNGFromChart(allocationChart, "microdca_allocation_chart.png"); }
-  function downloadIncomePNG() { downloadPNGFromChart(incomeChart, "microdca_income_chart.png"); }
+  function downloadSimulationCSV(){
+    if (!state.built) { showAlert("Build a simulation first."); return; }
 
-  /* ================================
-     INIT
-  ================================= */
-  document.addEventListener("DOMContentLoaded", function () {
-    const assetCountSelect = document.getElementById("assetCount");
-    const calcBtn = document.getElementById("calcBtn");
-    const csvAllBtn = document.getElementById("csvAllBtn");
-    const mainPngBtn = document.getElementById("mainPngBtn");
-    const allocPngBtn = document.getElementById("allocPngBtn");
-    const incomePngBtn = document.getElementById("incomePngBtn");
+    const dates = state.cashSim.dates;
+    const eqCash = state.cashSim.equityArr;
+    const eqMar = state.marginSim.equityArr;
+    const debt = state.marginSim.debtArr;
+    const ltv = state.marginSim.ltvArr;
+    const cover = state.marginSim.coverArr;
+    const taxRes = state.marginSim.taxReserveArr;
+    const billsPaid = state.marginSim.billsPaidArr;
 
-    // Global allocation mode listeners (expects HTML radios with these IDs)
-    const allocModePct = document.getElementById("allocModePct");
-    const allocModeUsd = document.getElementById("allocModeUsd");
-    [allocModePct, allocModeUsd].forEach(el => {
-      if (!el) return;
-      el.addEventListener("change", function () {
-        syncAllAllocUI();
-        updateAssetTotals();
-      });
-    });
+    const ev = state.marginSim.events || {};
+    const dep = ev.dep || [];
+    const buy = ev.buy || [];
+    const income = ev.income || [];
+    const interest = ev.interest || [];
+    const paydown = ev.paydown || [];
+    const borrowAdj = ev.borrowAdj || [];
+    const borrowBuy = ev.borrowBuy || [];
 
-    if (assetCountSelect) {
-      buildAssetRows(parseInt(assetCountSelect.value || "2", 10));
-      assetCountSelect.addEventListener("change", function () {
-        const count = parseInt(this.value || "1", 10);
-        buildAssetRows(count);
-        syncAllAllocUI();
-        updateAssetTotals();
-      });
+    const dist = ev.dist || [];
+    const tax = ev.tax || [];
+    const bills = ev.bills || [];
+    const billsShort = ev.billsShort || [];
+
+    const header = [
+      "date",
+      "equity_cash_only",
+      "equity_with_margin",
+      "debt",
+      "ltv",
+      "income_coverage",
+      "tax_reserve",
+      "bills_paid_cum",
+      "event_deposit",
+      "event_buy",
+      "event_income_daily",
+      "event_interest",
+      "event_paydown",
+      "event_borrow_adjust",
+      "event_borrow_buy",
+      "event_dist_monthly",
+      "event_tax",
+      "event_bills",
+      "event_bills_short"
+    ].join(",");
+
+    const rows = [header];
+
+    for (let i = 0; i < dates.length; i++){
+      const line = [
+        dates[i],
+        (isFinite(eqCash[i]) ? eqCash[i] : ""),
+        (isFinite(eqMar[i]) ? eqMar[i] : ""),
+        (isFinite(debt[i]) ? debt[i] : ""),
+        (isFinite(ltv[i]) ? ltv[i] : ""),
+        (cover[i] === Infinity ? "Infinity" : (isFinite(cover[i]) ? cover[i] : "")),
+        (isFinite(taxRes[i]) ? taxRes[i] : ""),
+        (isFinite(billsPaid[i]) ? billsPaid[i] : ""),
+        (isFinite(dep[i]) ? dep[i] : 0),
+        (isFinite(buy[i]) ? buy[i] : 0),
+        (isFinite(income[i]) ? income[i] : 0),
+        (isFinite(interest[i]) ? interest[i] : 0),
+        (isFinite(paydown[i]) ? paydown[i] : 0),
+        (isFinite(borrowAdj[i]) ? borrowAdj[i] : 0),
+        (isFinite(borrowBuy[i]) ? borrowBuy[i] : 0),
+        (isFinite(dist[i]) ? dist[i] : 0),
+        (isFinite(tax[i]) ? tax[i] : 0),
+        (isFinite(bills[i]) ? bills[i] : 0),
+        (isFinite(billsShort[i]) ? billsShort[i] : 0)
+      ].join(",");
+      rows.push(line);
     }
 
-    if (calcBtn) calcBtn.addEventListener("click", calculateProjection);
-    if (csvAllBtn) csvAllBtn.addEventListener("click", downloadCSV);
+    const csv = rows.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const filename = `${safeFileBase()}.csv`;
+    downloadBlob(blob, filename);
+    log(`Exported CSV: ${filename}`);
+  }
 
-    if (mainPngBtn) mainPngBtn.addEventListener("click", downloadProjectionPNG);
-    if (allocPngBtn) allocPngBtn.addEventListener("click", downloadAllocationPNG);
-    if (incomePngBtn) incomePngBtn.addEventListener("click", downloadIncomePNG);
+  async function buildSimulation(){
+    el.log.textContent = "Building simulation...\n";
+    showAlert(null);
+    state.alerted70 = state.alerted85 = state.alerted95 = false;
 
-    // Initial sync (in case HTML loads with $ pre-selected)
-    syncAllAllocUI();
-    updateAssetTotals();
+    const name = (el.name.value || "").trim();
+    const startCash = Math.max(0, Number(el.startCash.value) || 0);
+    const dcaAmt = Math.max(0, Number(el.dcaAmt.value) || 0);
+    const freq = el.freq.value;
+    const startISO = el.startDate.value;
+    const endISO = el.endDate.value;
+
+    if (!startISO || !endISO || startISO > endISO){ log("Invalid date range."); return; }
+
+    const coreTickers = el.coreTickers.value.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+    const coreWeightsRaw = normWeights(el.coreWeights.value.split(",").map(s => s.trim()));
+    if (!coreTickers.length){ log("Add at least one core ticker."); return; }
+
+    const incomeOn = !!el.incomeOn.checked;
+    const incTickers = incomeOn ? el.incomeTickers.value.split(",").map(s => s.trim().toUpperCase()).filter(Boolean) : [];
+    const incWeightsRaw = incomeOn ? normWeights(el.incomeWeights.value.split(",").map(s => s.trim())) : [];
+
+    const incomeSplit = clamp(Number(el.incomeSplit.value) || 0, 0, 100);
+    const incomeYieldAPR = Math.max(0, Number(el.incomeYield.value) || 0);
+
+    const useMargin = !!el.useMargin.checked && (el.marginPolicy.value !== "off");
+    const marginRateAPR = Math.max(0, Number(el.marginRate.value) || 0);
+    const maxLTV = clamp((Number(el.maxLTV.value) || 0)/100, 0, 0.95);
+    const marginPolicy = el.marginPolicy.value;
+    const dayCount = Number(el.dayCount.value) || 365;
+
+    const incomeMode = el.incomeMode.value;
+    const adjustFreq = el.adjustFreq.value;
+    const targetRatio = clamp((Number(el.targetRatio.value) || 0)/100, 0, 0.95);
+    const allowTargetBorrow = (el.targetBorrow.value === "yes");
+    const bandMin = Math.max(0, Number(el.bandMin.value) || 0);
+    const bandMax = Math.max(0, Number(el.bandMax.value) || 0);
+
+    const rebalanceBuys = !!el.rebalance.checked;
+
+    // Bills & Taxes inputs
+    const billsOn = !!el.billsOn?.checked;
+    const billsMonthly = Math.max(0, Number(el.billsMonthly?.value) || 0);
+    const taxRatePct = clamp(Number(el.taxRate?.value) || 0, 0, 80);
+    const billsFallback = el.billsFallback?.value || "cash";
+    const taxHandling = el.taxHandling?.value || "reserve";
+
+    previewAlloc();
+
+    const allTickers = [...new Set([...coreTickers, ...incTickers])];
+    log(`Loading prices for ${allTickers.length} tickers...`);
+    const series = await loadPricesForTickers(allTickers, startISO, endISO);
+    const aligned = alignTimeline(series);
+    if (aligned.dates.length < 80){
+      log("Not enough overlapping history across tickers. Try a wider range or fewer tickers.");
+      return;
+    }
+
+    const prices = {};
+    aligned.tickers.forEach(t => { prices[t] = aligned.prices[t]; });
+
+    const coreWeights = coreTickers.map((_,i) => coreWeightsRaw[i] ?? (1/coreTickers.length));
+    const coreSum = coreWeights.reduce((p,c)=>p+c,0) || 1;
+    const coreW = coreWeights.map(x => x/coreSum);
+
+    const incWeights = incTickers.map((_,i) => incWeightsRaw[i] ?? (incTickers.length ? 1/incTickers.length : 0));
+    const incSum = incWeights.reduce((p,c)=>p+c,0) || 1;
+    const incW = incTickers.length ? incWeights.map(x => x/incSum) : [];
+
+    const cashSim = simulateCashOnly({
+      dates: aligned.dates,
+      prices,
+      tickers: coreTickers,
+      weights: coreW,
+      startCash, dcaAmt, freq,
+      rebalanceBuys
+    });
+
+    const marginSim = simulateMarginWithIncome({
+      dates: aligned.dates,
+      prices,
+      coreTickers, coreWeights: coreW,
+      incTickers, incWeights: incW,
+      startCash, dcaAmt, freq,
+      useMargin,
+      marginRateAPR,
+      maxLTV,
+      marginPolicy,
+      dayCount,
+      rebalanceBuys,
+
+      incomeOn,
+      incomeYieldAPR,
+      incomeSplit,
+
+      incomeMode,
+      adjustFreq,
+      targetRatio,
+      allowTargetBorrow,
+      bandMin, bandMax,
+
+      billsOn,
+      billsMonthly,
+      taxRatePct,
+      billsFallback,
+      taxHandling
+    });
+
+    state.cashSim = cashSim;
+    state.marginSim = marginSim;
+    state.meta = { name, useMargin, maxLTV };
+    state.built = true;
+    state.playing = false;
+    state.i = 0;
+    state.lastTs = performance.now();
+
+    el.badge.textContent = useMargin ? "SIMULATED (COMPARE + MARGIN)" : "SIMULATED (COMPARE)";
+    setControlsBuilt(true);
+    drawFrame(0);
+
+    log(`Built: ${aligned.dates.length} market days.`);
+    log(`With margin: ${useMargin ? "ON" : "OFF"} • income: ${incomeOn ? "ON" : "OFF"} • bills/taxes: ${billsOn ? "ON" : "OFF"}.`);
+  }
+
+  // Wiring
+  el.speed.addEventListener("input", () => { el.speedLabel.textContent = `${el.speed.value} d/s`; });
+  el.speedLabel.textContent = `${el.speed.value} d/s`;
+
+  el.build.addEventListener("click", () => {
+    buildSimulation().catch(e => { console.error(e); log("Build failed. Check console."); });
   });
 
+  el.reset.addEventListener("click", () => {
+    state.built = false;
+    state.playing = false;
+    state.i = 0;
+    state.cashSim = null;
+    state.marginSim = null;
+    state.meta = { name:"", useMargin:false, maxLTV:0 };
+    showAlert(null);
+
+    setControlsBuilt(false);
+
+    el.kDate.textContent = "—";
+    el.kEqCash.textContent = "—";
+    el.kEqMargin.textContent = "—";
+    el.kDebt.textContent = "—";
+    el.kLTV.textContent = "—";
+    el.kCover.textContent = "—";
+    if (el.kTax) el.kTax.textContent = "—";
+    if (el.kBills) el.kBills.textContent = "—";
+
+    el.riskGrade.textContent = "—";
+    el.riskFill.style.width = "0%";
+    el.riskProx.textContent = "—";
+    el.riskDev.textContent = "—";
+    el.riskSignal.textContent = "—";
+
+    el.vizDesc.textContent = "Build a simulation to begin.";
+    el.badge.textContent = "SIMULATED";
+    el.log.textContent = "Ready.";
+
+    resizeCanvasToCSS();
+    ctx2.clearRect(0,0,el.canvas.width, el.canvas.height);
+  });
+
+  el.play.addEventListener("click", () => {
+    if (!state.built) return;
+    const n = state.cashSim.dates.length;
+    if (Math.floor(state.i) >= n-1) state.i = 0;
+    state.playing = true;
+    state.lastTs = performance.now();
+    log("Play.");
+    requestAnimationFrame(tick);
+  });
+
+  el.pause.addEventListener("click", () => {
+    if (!state.built) return;
+    state.playing = false;
+    log("Pause.");
+  });
+
+  el.step.addEventListener("click", () => {
+    if (!state.built) return;
+    state.playing = false;
+    const n = state.cashSim.dates.length;
+    state.i = Math.min(n-1, Math.floor(state.i) + 1);
+    drawFrame(Math.floor(state.i));
+  });
+
+  el.toEnd.addEventListener("click", () => {
+    if (!state.built) return;
+    state.playing = false;
+    state.i = state.cashSim.dates.length - 1;
+    drawFrame(Math.floor(state.i));
+    log("Jumped to end.");
+  });
+
+  el.mode.addEventListener("change", () => { if (state.built) drawFrame(Math.floor(state.i)); });
+
+  el.dlPng?.addEventListener("click", downloadCanvasPNG);
+  el.dlCsv?.addEventListener("click", downloadSimulationCSV);
+
+  window.addEventListener("resize", () => { if (state.built) drawFrame(Math.floor(state.i)); });
+  resizeCanvasToCSS();
 })();
