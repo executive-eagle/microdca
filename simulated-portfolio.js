@@ -65,7 +65,7 @@
 
     coreTickers: $("spTickers"),
     coreWeights: $("spWeights"),
-    allocPreview: $("spAllocPreview")?.querySelector("tbody"),
+    allocPreview: $("spAllocPreview")?.querySelector("tbody") || $("spAllocPreview"),
     updateAlloc: $("spUpdateAlloc"),
 
     incomeOn: $("spIncomeOn"),
@@ -124,6 +124,15 @@
     dlCsv: $("spDlCsv"),
 
     canvas: $("spCanvas"),
+
+    // Beginner / Advanced
+    advancedMode: $("spAdvancedMode"),
+    advancedToggles: $("spAdvancedToggles"),
+    modeLabel: $("spModeLabel"),
+    showMarginAdvanced: $("spShowMarginAdvanced"),
+    showIncomeCard: $("spShowIncomeCard"),
+    showIncomeAdvanced: $("spShowIncomeAdvanced"),
+    showBillsCard: $("spShowBillsCard"),
   };
 
   if (!el.canvas || !el.build || !el.reset) return;
@@ -134,8 +143,94 @@
   el.startDate.value = iso(start);
   el.endDate.value = iso(end);
 
+  // =========================
+  // BEGINNER / ADVANCED MODE
+  // =========================
+  const SP_PREF_KEY = "microdca_sp_prefs_v1";
+
+  function loadPrefs() {
+    try {
+      const raw = localStorage.getItem(SP_PREF_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }
+  function savePrefs(p) {
+    try {
+      localStorage.setItem(SP_PREF_KEY, JSON.stringify(p));
+    } catch {}
+  }
+
+  function applyModeVisibility() {
+    const adv = !!el.advancedMode?.checked;
+
+    // In beginner mode, force advanced tools OFF.
+    if (!adv) {
+      if (el.showMarginAdvanced) el.showMarginAdvanced.checked = false;
+      if (el.showIncomeCard) el.showIncomeCard.checked = false;
+      if (el.showIncomeAdvanced) el.showIncomeAdvanced.checked = false;
+      if (el.showBillsCard) el.showBillsCard.checked = false;
+    }
+
+    if (el.advancedToggles) el.advancedToggles.style.display = adv ? "flex" : "none";
+    if (el.modeLabel) el.modeLabel.textContent = adv ? "Advanced" : "Beginner";
+
+    const showMarginAdv = adv && !!el.showMarginAdvanced?.checked;
+    const showIncome = adv && !!el.showIncomeCard?.checked;
+    const showIncomeAdv = adv && !!el.showIncomeAdvanced?.checked;
+    const showBills = adv && !!el.showBillsCard?.checked;
+
+    // Entire cards
+    document.querySelectorAll('[data-adv-card="income"]').forEach((node) => {
+      node.classList.toggle("is-hidden", !showIncome);
+    });
+    document.querySelectorAll('[data-adv-card="bills"]').forEach((node) => {
+      node.classList.toggle("is-hidden", !showBills);
+    });
+
+    // Advanced sub-controls
+    document.querySelectorAll('[data-adv="margin"]').forEach((node) => {
+      node.style.display = showMarginAdv ? "" : "none";
+    });
+    document.querySelectorAll('[data-adv="income"]').forEach((node) => {
+      node.style.display = showIncomeAdv ? "" : "none";
+    });
+
+    // Keep the logic consistent with what is visible
+    if (!showIncome && el.incomeOn) el.incomeOn.checked = false;
+    if (!showBills && el.billsOn) el.billsOn.checked = false;
+
+    savePrefs({
+      advanced: adv,
+      showMarginAdvanced: !!el.showMarginAdvanced?.checked,
+      showIncome: !!el.showIncomeCard?.checked,
+      showIncomeAdvanced: !!el.showIncomeAdvanced?.checked,
+      showBills: !!el.showBillsCard?.checked,
+    });
+  }
+
+  function initModeFromPrefs() {
+    const p = loadPrefs();
+    if (el.advancedMode) el.advancedMode.checked = !!p.advanced;
+    if (el.showMarginAdvanced) el.showMarginAdvanced.checked = !!p.showMarginAdvanced;
+    if (el.showIncomeCard) el.showIncomeCard.checked = !!p.showIncome;
+    if (el.showIncomeAdvanced) el.showIncomeAdvanced.checked = !!p.showIncomeAdvanced;
+    if (el.showBillsCard) el.showBillsCard.checked = !!p.showBills;
+
+    applyModeVisibility();
+
+    el.advancedMode?.addEventListener("change", applyModeVisibility);
+    el.showMarginAdvanced?.addEventListener("change", applyModeVisibility);
+    el.showIncomeCard?.addEventListener("change", applyModeVisibility);
+    el.showIncomeAdvanced?.addEventListener("change", applyModeVisibility);
+    el.showBillsCard?.addEventListener("change", applyModeVisibility);
+  }
+
   function syncIncomeModeUI() {
-    const mode = el.incomeMode.value;
+    const mode = el.incomeMode?.value;
+    if (!mode) return;
+
     if (mode === "price_band") {
       el.bandRow?.classList.remove("hidden");
       el.targetRow?.classList.add("hidden");
@@ -147,8 +242,10 @@
       el.targetRow?.classList.add("hidden");
     }
   }
-  el.incomeMode.addEventListener("change", syncIncomeModeUI);
+  el.incomeMode?.addEventListener("change", syncIncomeModeUI);
   syncIncomeModeUI();
+
+  initModeFromPrefs();
 
   function log(msg) {
     const t = new Date();
@@ -172,29 +269,32 @@
   }
 
   function previewAlloc() {
-    const tickers = el.coreTickers.value
+    const tickers = (el.coreTickers?.value || "")
       .split(",")
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean);
-    const weights = normWeights(el.coreWeights.value.split(",").map((s) => s.trim()));
+    const weights = normWeights((el.coreWeights?.value || "").split(",").map((s) => s.trim()));
     if (!el.allocPreview) return;
 
-    el.allocPreview.innerHTML = "";
+    // If spAllocPreview is tbody (original) or table body itself, support both.
+    const tbody = el.allocPreview.tagName?.toLowerCase() === "tbody" ? el.allocPreview : el.allocPreview;
+
+    tbody.innerHTML = "";
     tickers.forEach((t, i) => {
       const w = weights[i] ?? 0;
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td class="mono">${t}</td>
-        <td class="mono">${(w * 100).toFixed(2)}%</td>
-        <td>${i === 0 ? "Anchor position" : "Satellite / diversifier"}</td>
+        <td style="padding:8px; border-bottom:1px solid rgba(255,255,255,0.06);" class="mono">${t}</td>
+        <td style="padding:8px; border-bottom:1px solid rgba(255,255,255,0.06);" class="mono">${(w * 100).toFixed(2)}%</td>
+        <td style="padding:8px; border-bottom:1px solid rgba(255,255,255,0.06);">${i === 0 ? "Anchor position" : "Satellite / diversifier"}</td>
       `;
-      el.allocPreview.appendChild(tr);
+      tbody.appendChild(tr);
     });
 
     if (!tickers.length) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="3">Add tickers to preview allocation.</td>`;
-      el.allocPreview.appendChild(tr);
+      tr.innerHTML = `<td colspan="3" style="padding:8px; color:rgba(245,245,245,0.55);">Add tickers to preview allocation.</td>`;
+      tbody.appendChild(tr);
     }
   }
   el.updateAlloc?.addEventListener("click", previewAlloc);
@@ -266,7 +366,6 @@
       maps[t] = m;
     });
 
-    // choose shortest history as base (max overlap chance)
     let base = tickers[0];
     for (const t of tickers) if (seriesByTicker[t].length < seriesByTicker[base].length) base = t;
 
@@ -323,7 +422,6 @@
     return buy;
   }
 
-  // More efficient adjust-day check (no rebuilding schedules every call)
   function buildAdjustSchedule(dates, freq) {
     if (freq === "daily") return new Array(dates.length).fill(true);
     if (freq === "weekly") return buildBuySchedule(dates, "weekly");
@@ -331,7 +429,6 @@
     return new Array(dates.length).fill(true);
   }
 
-  // Month-end trigger: last market day of each month
   function buildMonthEndSchedule(dates) {
     const isMonthEnd = new Array(dates.length).fill(false);
     for (let i = 0; i < dates.length; i++) {
@@ -498,7 +595,6 @@
 
     const dailyRate = (marginRateAPR / 100) / (Number(dayCount) || 365);
     const dailyIncomeRate = (incomeYieldAPR / 100) / (Number(dayCount) || 365);
-
     const monthlyIncomeRate = (incomeYieldAPR / 100) / 12;
 
     const split = clamp((Number(incomeSplit) || 0) / 100, 0, 1);
@@ -639,10 +735,6 @@
         const short = billsNeed - pay;
         if (short > 0) {
           ev.billsShort[i] = short;
-
-          // optional fallback behavior placeholder (you can implement later)
-          // if (billsFallback === "borrow") { ... }
-          // if (billsFallback === "sell") { ... }
         }
       }
     }
@@ -795,7 +887,6 @@
     return { mn, mx };
   }
 
-  // PATCH: render a dot at Day 1 so the chart doesn't look empty
   function plotLine(arr, upto, w, h, pad, stroke, range, alpha = 1) {
     const n = arr.length;
     if (!n) return;
@@ -1032,49 +1123,7 @@
     alerted70: false,
     alerted85: false,
     alerted95: false,
-
-    // NEW: interval-based animation for Webflow reliability
-    timer: null,
-    fps: 60,
   };
-
-  function stopPlayback() {
-    state.playing = false;
-    if (state.timer) {
-      clearInterval(state.timer);
-      state.timer = null;
-    }
-  }
-
-  function startPlayback() {
-    if (!state.built) return;
-
-    const n = state.cashSim.dates.length;
-    if (Math.floor(state.i) >= n - 1) state.i = 0;
-
-    stopPlayback();
-    state.playing = true;
-
-    log("Play.");
-
-    const frameMs = Math.round(1000 / (state.fps || 60));
-    state.timer = setInterval(() => {
-      if (!state.playing || !state.built) return;
-
-      const n2 = state.cashSim.dates.length;
-      const speed = Number(el.speed.value) || 60; // days per second
-      const daysPerTick = speed / (state.fps || 60);
-
-      state.i = Math.min(n2 - 1, state.i + daysPerTick);
-
-      drawFrame(Math.floor(state.i));
-
-      if (Math.floor(state.i) >= n2 - 1) {
-        log("Reached end of simulation.");
-        stopPlayback();
-      }
-    }, frameMs);
-  }
 
   function setControlsBuilt(on) {
     el.play.disabled = !on;
@@ -1140,6 +1189,30 @@
     const totalDays = state.cashSim.dates.length;
     const label = state.meta.name || "Simulated Account";
     el.vizDesc.textContent = `${label} • Day ${i + 1} / ${totalDays}`;
+  }
+
+  function tick(ts) {
+    if (!state.playing) {
+      state.lastTs = ts;
+      return;
+    }
+    const dt = (ts - state.lastTs) / 1000;
+    state.lastTs = ts;
+
+    const speed = Number(el.speed.value);
+    const advance = speed * dt;
+
+    const n = state.cashSim.dates.length;
+    state.i = Math.min(n - 1, state.i + advance);
+
+    drawFrame(Math.floor(state.i));
+
+    if (Math.floor(state.i) >= n - 1) {
+      state.playing = false;
+      log("Reached end of simulation.");
+    } else {
+      requestAnimationFrame(tick);
+    }
   }
 
   function safeFileBase() {
@@ -1286,40 +1359,40 @@
       return;
     }
 
-    const coreTickers = el.coreTickers.value
+    const coreTickers = (el.coreTickers.value || "")
       .split(",")
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean);
-    const coreWeightsRaw = normWeights(el.coreWeights.value.split(",").map((s) => s.trim()));
+    const coreWeightsRaw = normWeights((el.coreWeights.value || "").split(",").map((s) => s.trim()));
     if (!coreTickers.length) {
       log("Add at least one core ticker.");
       return;
     }
 
-    const incomeOn = !!el.incomeOn.checked;
+    const incomeOn = !!el.incomeOn?.checked;
     const incTickers = incomeOn
-      ? el.incomeTickers.value
+      ? (el.incomeTickers.value || "")
           .split(",")
           .map((s) => s.trim().toUpperCase())
           .filter(Boolean)
       : [];
-    const incWeightsRaw = incomeOn ? normWeights(el.incomeWeights.value.split(",").map((s) => s.trim())) : [];
+    const incWeightsRaw = incomeOn ? normWeights((el.incomeWeights.value || "").split(",").map((s) => s.trim())) : [];
 
-    const incomeSplit = clamp(Number(el.incomeSplit.value) || 0, 0, 100);
-    const incomeYieldAPR = Math.max(0, Number(el.incomeYield.value) || 0);
+    const incomeSplit = clamp(Number(el.incomeSplit?.value) || 0, 0, 100);
+    const incomeYieldAPR = Math.max(0, Number(el.incomeYield?.value) || 0);
 
-    const useMargin = !!el.useMargin.checked && el.marginPolicy.value !== "off";
+    const useMargin = !!el.useMargin.checked && (el.marginPolicy?.value || "assist") !== "off";
     const marginRateAPR = Math.max(0, Number(el.marginRate.value) || 0);
     const maxLTV = clamp((Number(el.maxLTV.value) || 0) / 100, 0, 0.95);
-    const marginPolicy = el.marginPolicy.value;
-    const dayCount = Number(el.dayCount.value) || 365;
+    const marginPolicy = el.marginPolicy?.value || "assist";
+    const dayCount = Number(el.dayCount?.value) || 365;
 
-    const incomeMode = el.incomeMode.value;
-    const adjustFreq = el.adjustFreq.value;
-    const targetRatio = clamp((Number(el.targetRatio.value) || 0) / 100, 0, 0.95);
-    const allowTargetBorrow = el.targetBorrow.value === "yes";
-    const bandMin = Math.max(0, Number(el.bandMin.value) || 0);
-    const bandMax = Math.max(0, Number(el.bandMax.value) || 0);
+    const incomeMode = el.incomeMode?.value || "interest_only";
+    const adjustFreq = el.adjustFreq?.value || "weekly";
+    const targetRatio = clamp((Number(el.targetRatio?.value) || 0) / 100, 0, 0.95);
+    const allowTargetBorrow = (el.targetBorrow?.value || "no") === "yes";
+    const bandMin = Math.max(0, Number(el.bandMin?.value) || 0);
+    const bandMax = Math.max(0, Number(el.bandMax?.value) || 0);
 
     const rebalanceBuys = !!el.rebalance.checked;
 
@@ -1341,10 +1414,7 @@
       return;
     }
 
-    // =========================
-    // FIX: aligned.prices is keyed by ticker symbol (NOT array index).
-    // Add robust guards so we never read undefined[0].
-    // =========================
+    // aligned.prices is keyed by ticker symbol
     const prices = {};
     const needed = [...new Set([...coreTickers, ...incTickers])];
 
@@ -1352,14 +1422,11 @@
       const seriesArr = aligned?.prices?.[t];
       if (!seriesArr || !Array.isArray(seriesArr) || seriesArr.length === 0) {
         throw new Error(
-          `Aligned timeline missing ticker: ${t}. ` +
-            `Try a wider date range or remove the shortest-history ticker.`
+          `Aligned timeline missing ticker: ${t}. Try a wider date range or remove the shortest-history ticker.`
         );
       }
       if (seriesArr.length !== aligned.dates.length) {
-        throw new Error(
-          `Aligned series length mismatch for ${t}: ${seriesArr.length} vs dates ${aligned.dates.length}`
-        );
+        throw new Error(`Aligned series length mismatch for ${t}: ${seriesArr.length} vs dates ${aligned.dates.length}`);
       }
       prices[t] = seriesArr;
     }
@@ -1419,6 +1486,7 @@
     state.marginSim = marginSim;
     state.meta = { name, useMargin, maxLTV };
     state.built = true;
+    state.playing = false;
     state.i = 0;
     state.lastTs = performance.now();
 
@@ -1427,14 +1495,12 @@
     drawFrame(0);
 
     log(`Built: ${aligned.dates.length} market days.`);
+    log("Tip: Use Play or Step to advance the animation (Day 1 shows a dot, then a line as days progress).");
     log(
       `With margin: ${useMargin ? "ON" : "OFF"} • income: ${incomeOn ? "ON" : "OFF"} • bills/taxes: ${
         billsOn ? "ON" : "OFF"
       }.`
     );
-
-    // NEW: auto-start playback (optional but helpful for verifying advancement)
-    startPlayback();
   }
 
   // Wiring
@@ -1453,8 +1519,6 @@
   });
 
   el.reset.addEventListener("click", () => {
-    stopPlayback(); // NEW
-
     state.built = false;
     state.playing = false;
     state.i = 0;
@@ -1489,18 +1553,24 @@
   });
 
   el.play.addEventListener("click", () => {
-    startPlayback(); // NEW
+    if (!state.built) return;
+    const n = state.cashSim.dates.length;
+    if (Math.floor(state.i) >= n - 1) state.i = 0;
+    state.playing = true;
+    state.lastTs = performance.now();
+    log("Play.");
+    requestAnimationFrame(tick);
   });
 
   el.pause.addEventListener("click", () => {
     if (!state.built) return;
-    stopPlayback(); // NEW
+    state.playing = false;
     log("Pause.");
   });
 
   el.step.addEventListener("click", () => {
     if (!state.built) return;
-    stopPlayback(); // NEW
+    state.playing = false;
     const n = state.cashSim.dates.length;
     state.i = Math.min(n - 1, Math.floor(state.i) + 1);
     drawFrame(Math.floor(state.i));
@@ -1508,7 +1578,7 @@
 
   el.toEnd.addEventListener("click", () => {
     if (!state.built) return;
-    stopPlayback(); // NEW
+    state.playing = false;
     state.i = state.cashSim.dates.length - 1;
     drawFrame(Math.floor(state.i));
     log("Jumped to end.");
