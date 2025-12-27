@@ -814,7 +814,8 @@
     ctx.strokeStyle = stroke;
     ctx.globalAlpha = alpha;
 
-    let xFirst = null, yFirst = null;
+    let xFirst = null,
+      yFirst = null;
     let started = false;
 
     ctx.beginPath();
@@ -827,7 +828,10 @@
       const x = x0 + (x1 - x0) * (i / (n - 1));
       const y = y1 - (y1 - y0) * ((v - mn) / span);
 
-      if (xFirst === null) { xFirst = x; yFirst = y; }
+      if (xFirst === null) {
+        xFirst = x;
+        yFirst = y;
+      }
 
       if (!started) {
         ctx.moveTo(x, y);
@@ -838,8 +842,6 @@
     }
     ctx.stroke();
 
-    // At Day 1, the line path contains only one point, so it can look "empty".
-    // Render a small dot so users immediately see that data exists.
     if (u === 0 && xFirst !== null) {
       ctx.fillStyle = stroke;
       ctx.beginPath();
@@ -1030,7 +1032,49 @@
     alerted70: false,
     alerted85: false,
     alerted95: false,
+
+    // NEW: interval-based animation for Webflow reliability
+    timer: null,
+    fps: 60,
   };
+
+  function stopPlayback() {
+    state.playing = false;
+    if (state.timer) {
+      clearInterval(state.timer);
+      state.timer = null;
+    }
+  }
+
+  function startPlayback() {
+    if (!state.built) return;
+
+    const n = state.cashSim.dates.length;
+    if (Math.floor(state.i) >= n - 1) state.i = 0;
+
+    stopPlayback();
+    state.playing = true;
+
+    log("Play.");
+
+    const frameMs = Math.round(1000 / (state.fps || 60));
+    state.timer = setInterval(() => {
+      if (!state.playing || !state.built) return;
+
+      const n2 = state.cashSim.dates.length;
+      const speed = Number(el.speed.value) || 60; // days per second
+      const daysPerTick = speed / (state.fps || 60);
+
+      state.i = Math.min(n2 - 1, state.i + daysPerTick);
+
+      drawFrame(Math.floor(state.i));
+
+      if (Math.floor(state.i) >= n2 - 1) {
+        log("Reached end of simulation.");
+        stopPlayback();
+      }
+    }, frameMs);
+  }
 
   function setControlsBuilt(on) {
     el.play.disabled = !on;
@@ -1096,30 +1140,6 @@
     const totalDays = state.cashSim.dates.length;
     const label = state.meta.name || "Simulated Account";
     el.vizDesc.textContent = `${label} • Day ${i + 1} / ${totalDays}`;
-  }
-
-  function tick(ts) {
-    if (!state.playing) {
-      state.lastTs = ts;
-      return;
-    }
-    const dt = (ts - state.lastTs) / 1000;
-    state.lastTs = ts;
-
-    const speed = Number(el.speed.value);
-    const advance = speed * dt;
-
-    const n = state.cashSim.dates.length;
-    state.i = Math.min(n - 1, state.i + advance);
-
-    drawFrame(Math.floor(state.i));
-
-    if (Math.floor(state.i) >= n - 1) {
-      state.playing = false;
-      log("Reached end of simulation.");
-    } else {
-      requestAnimationFrame(tick);
-    }
   }
 
   function safeFileBase() {
@@ -1399,7 +1419,6 @@
     state.marginSim = marginSim;
     state.meta = { name, useMargin, maxLTV };
     state.built = true;
-    state.playing = false;
     state.i = 0;
     state.lastTs = performance.now();
 
@@ -1408,12 +1427,14 @@
     drawFrame(0);
 
     log(`Built: ${aligned.dates.length} market days.`);
-    log("Tip: Use Play or Step to advance the animation (the chart at Day 1 shows a dot, then a line as days progress).");
     log(
       `With margin: ${useMargin ? "ON" : "OFF"} • income: ${incomeOn ? "ON" : "OFF"} • bills/taxes: ${
         billsOn ? "ON" : "OFF"
       }.`
     );
+
+    // NEW: auto-start playback (optional but helpful for verifying advancement)
+    startPlayback();
   }
 
   // Wiring
@@ -1432,6 +1453,8 @@
   });
 
   el.reset.addEventListener("click", () => {
+    stopPlayback(); // NEW
+
     state.built = false;
     state.playing = false;
     state.i = 0;
@@ -1466,24 +1489,18 @@
   });
 
   el.play.addEventListener("click", () => {
-    if (!state.built) return;
-    const n = state.cashSim.dates.length;
-    if (Math.floor(state.i) >= n - 1) state.i = 0;
-    state.playing = true;
-    state.lastTs = performance.now();
-    log("Play.");
-    requestAnimationFrame(tick);
+    startPlayback(); // NEW
   });
 
   el.pause.addEventListener("click", () => {
     if (!state.built) return;
-    state.playing = false;
+    stopPlayback(); // NEW
     log("Pause.");
   });
 
   el.step.addEventListener("click", () => {
     if (!state.built) return;
-    state.playing = false;
+    stopPlayback(); // NEW
     const n = state.cashSim.dates.length;
     state.i = Math.min(n - 1, Math.floor(state.i) + 1);
     drawFrame(Math.floor(state.i));
@@ -1491,7 +1508,7 @@
 
   el.toEnd.addEventListener("click", () => {
     if (!state.built) return;
-    state.playing = false;
+    stopPlayback(); // NEW
     state.i = state.cashSim.dates.length - 1;
     drawFrame(Math.floor(state.i));
     log("Jumped to end.");
