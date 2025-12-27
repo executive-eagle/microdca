@@ -4,6 +4,14 @@
 
   const $ = (id) => document.getElementById(id);
 
+  // =========================
+  // PRICE PROXY (Cloudflare Worker)
+  // =========================
+  // You can override this from Webflow before the jsdelivr script loads:
+  // <script>window.MICRODCA_PRICE_PROXY_BASE="https://simulated-portfolio.microdca3.workers.dev";</script>
+  const PRICE_PROXY_BASE =
+    (window.MICRODCA_PRICE_PROXY_BASE || "https://simulated-portfolio.microdca3.workers.dev").replace(/\/+$/, "");
+
   const fmtUSD = (x) => {
     if (!isFinite(x)) return "—";
     const sign = x < 0 ? "-" : "";
@@ -183,10 +191,14 @@
   el.updateAlloc?.addEventListener("click", previewAlloc);
   previewAlloc();
 
+  // =========================
+  // UPDATED: use Worker proxy instead of direct Stooq (fixes Failed to fetch / CORS)
+  // =========================
   async function fetchDailyCloses(ticker){
-    const t = ticker.toLowerCase();
-    const stooqSymbol = t.includes(".") ? t : `${t}.us`;
-    const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSymbol)}&i=d`;
+    const t = String(ticker || "").trim().toUpperCase();
+    if (!t) throw new Error("Missing ticker");
+
+    const url = `${PRICE_PROXY_BASE}/api/prices?ticker=${encodeURIComponent(t)}`;
     const res = await fetch(url, { mode: "cors" });
     if (!res.ok) throw new Error(`Price fetch failed (${ticker})`);
     const text = await res.text();
@@ -564,33 +576,25 @@
 
       if (!monthEnd[i] || dist <= 0) return;
 
-      // Priority 1: Ensure interest isn't starving (optional: top-up by paying down "new" interest only)
-      // Here: we do NOT auto-pay interest from dist directly because interest is already capitalized daily.
-      // Instead, we allow dist to pay down debt per incomeMode (below). Bills/taxes occur first AFTER taxes calc, per your note.
-      // However you requested order: interest → taxes → bills → principal.
-      // We'll interpret "interest" as: pay down today's accrued interest amount first (reducing debt by that amount).
+      // Order: interest -> taxes -> bills -> principal
+      // Pay down today's accrued interest first (reduces debt)
       if (useMargin && interestToday > 0){
-        const paidInt = payDownDebt(i, Math.min(cash, interestToday));
-        // (paidInt is included inside ev.paydown)
+        payDownDebt(i, Math.min(cash, interestToday));
       }
 
-      // Priority 2: Taxes (on remaining distribution pool)
-      // Use "remaining distribution pool" as cash increase from dist; we approximate by applying taxes on dist net of interest paydown from cash.
-      // We compute tax on dist (less interest payment if it used dist).
-      let taxBase = dist;
-      const taxAmt = Math.max(0, taxBase * taxRate);
+      // Taxes on distribution (approx)
+      const taxAmt = Math.max(0, dist * taxRate);
       const taxPay = Math.min(cash, taxAmt);
 
       if (taxPay > 0){
         if (taxHandling === "reserve"){
           taxReserve += taxPay;
         }
-        // If taxHandling === "pay", we assume it leaves the system; either way it reduces cash.
         cash -= taxPay;
         ev.tax[i] = taxPay;
       }
 
-      // Priority 3: Bills
+      // Bills
       const billsNeed = Math.max(0, Number(billsMonthly) || 0);
       if (billsNeed > 0){
         const pay = Math.min(cash, billsNeed);
@@ -601,12 +605,7 @@
         }
         const short = billsNeed - pay;
         if (short > 0){
-          if (billsFallback === "cash"){
-            // attempt from any remaining cash (already 0 by definition), so short remains
-            ev.billsShort[i] = short;
-          } else {
-            ev.billsShort[i] = short;
-          }
+          ev.billsShort[i] = short;
         }
       }
     }
@@ -621,14 +620,11 @@
       if (!incomeOn){ targetDevArr[i] = 0; return; }
 
       if (incomeMode === "interest_only"){
-        // After bills/taxes, keep debt stable, but allow paying down small amounts via cash if desired:
-        // Here we do NOT auto-pay principal beyond interest paydown in month-end routing.
         targetDevArr[i] = 0;
         return;
       }
 
       if (incomeMode === "interest_plus_principal"){
-        // Allow using excess cash (including distributions left over) to pay down debt progressively.
         payDownDebt(i, cash);
         targetDevArr[i] = 0;
         return;
@@ -665,7 +661,7 @@
         ev.income[i] = incomeToday;
       }
 
-      // Month-end: add distributions + route to taxes/bills (and optionally interest)
+      // Month-end: add distributions + route to taxes/bills (and interest)
       applyMonthEndRouting(i, interestToday);
 
       // Margin management (post bills/taxes; uses whatever cash remains)
