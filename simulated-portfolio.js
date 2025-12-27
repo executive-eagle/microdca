@@ -1189,7 +1189,19 @@
     }
 
     const prices = {};
-    aligned.tickers.forEach(t => { prices[t] = aligned.prices[t]; });
+    const needed = [...new Set([...coreTickers, ...incTickers])];
+
+    for (const t of needed){
+     const idx = aligned.tickers.indexOf(t);
+     if (idx === -1){
+      throw new Error(
+       `Aligned timeline missing ticker: ${t}. ` +
+       `This happens when tickers do not share enough overlapping market days. ` +
+       `Try a wider date range or remove the shortest-history ticker.`
+     );
+    }
+     prices[t] = aligned.prices[idx];
+   }
 
     const coreWeights = coreTickers.map((_,i) => coreWeightsRaw[i] ?? (1/coreTickers.length));
     const coreSum = coreWeights.reduce((p,c)=>p+c,0) || 1;
@@ -1259,8 +1271,14 @@
   el.speedLabel.textContent = `${el.speed.value} d/s`;
 
   el.build.addEventListener("click", () => {
-    buildSimulation().catch(e => { console.error(e); log("Build failed. Check console."); });
-  });
+  buildSimulation().catch(e => {
+    console.error(e);
+    log(`Build failed: ${e?.message || e}`);
+    if (e?.stack) log(e.stack.split("\n").slice(0,6).join(" | "));
+    showAlert(`Build failed: ${e?.message || e}`);
+   });
+ });
+
 
   el.reset.addEventListener("click", () => {
     state.built = false;
