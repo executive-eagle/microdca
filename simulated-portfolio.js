@@ -7,8 +7,6 @@
   // =========================
   // PRICE PROXY (Cloudflare Worker)
   // =========================
-  // You can override this from Webflow before the jsdelivr script loads:
-  // <script>window.MICRODCA_PRICE_PROXY_BASE="https://simulated-portfolio.microdca.com";</script>
   const PRICE_PROXY_BASE =
     (window.MICRODCA_PRICE_PROXY_BASE || "https://simulated-portfolio.microdca3.workers.dev").replace(/\/+$/, "");
 
@@ -49,6 +47,29 @@
   };
 
   const el = {
+    // Mode + advanced options
+    modeToggle: $("spModeToggle"),
+    modeState: $("spModeState"),
+    advancedOptions: $("spAdvancedOptions"),
+    showMargin: $("spShowMargin"),
+    showIncome: $("spShowIncome"),
+    showIncomeAdv: $("spShowIncomeAdv"),
+    showBills: $("spShowBills"),
+
+    // Sections
+    secMarginIncome: $("secMarginIncome"),
+    secIncomeAdvanced: $("secIncomeAdvanced"),
+    secBillsTaxes: $("secBillsTaxes"),
+
+    // Core rows
+    coreRows: $("spCoreRows"),
+    addCoreAsset: $("spAddCoreAsset"),
+    previewAllocBtn: $("spPreviewAlloc"),
+    coreTickersHidden: $("spTickers"),
+    coreWeightsHidden: $("spWeights"),
+    allocPreview: $("spAllocPreview")?.querySelector("tbody"),
+
+    // Account basics
     name: $("spName"),
     startCash: $("spStartCash"),
     dcaAmt: $("spDcaAmt"),
@@ -57,17 +78,14 @@
     endDate: $("spEndDate"),
     rebalance: $("spRebalance"),
 
+    // Margin
     useMargin: $("spUseMargin"),
     marginRate: $("spMarginRate"),
     maxLTV: $("spMaxLTV"),
     marginPolicy: $("spMarginPolicy"),
     dayCount: $("spDayCount"),
 
-    coreTickers: $("spTickers"),
-    coreWeights: $("spWeights"),
-    allocPreview: $("spAllocPreview")?.querySelector("tbody") || $("spAllocPreview"),
-    updateAlloc: $("spUpdateAlloc"),
-
+    // Income
     incomeOn: $("spIncomeOn"),
     incomeTickers: $("spIncomeTickers"),
     incomeWeights: $("spIncomeWeights"),
@@ -89,22 +107,24 @@
     billsFallback: $("spBillsFallback"),
     taxHandling: $("spTaxHandling"),
 
+    // Controls
     build: $("spBuild"),
     reset: $("spReset"),
     play: $("spPlay"),
     pause: $("spPause"),
     step: $("spStep"),
     toEnd: $("spToEnd"),
-
     speed: $("spSpeed"),
     speedLabel: $("spSpeedLabel"),
     mode: $("spMode"),
 
+    // Status
     badge: $("spBadge"),
     vizDesc: $("spVizDesc"),
     log: $("spLog"),
     alert: $("spAlert"),
 
+    // KPIs
     kDate: $("kDate"),
     kEqCash: $("kEqCash"),
     kEqMargin: $("kEqMargin"),
@@ -114,138 +134,29 @@
     kTax: $("kTax"),
     kBills: $("kBills"),
 
+    // Risk
     riskGrade: $("riskGrade"),
     riskFill: $("riskFill"),
     riskProx: $("riskProx"),
     riskDev: $("riskDev"),
     riskSignal: $("riskSignal"),
 
+    // Downloads + canvas
     dlPng: $("spDlPng"),
     dlCsv: $("spDlCsv"),
-
     canvas: $("spCanvas"),
-
-    // Beginner / Advanced
-    advancedMode: $("spAdvancedMode"),
-    advancedToggles: $("spAdvancedToggles"),
-    modeLabel: $("spModeLabel"),
-    showMarginAdvanced: $("spShowMarginAdvanced"),
-    showIncomeCard: $("spShowIncomeCard"),
-    showIncomeAdvanced: $("spShowIncomeAdvanced"),
-    showBillsCard: $("spShowBillsCard"),
   };
 
   if (!el.canvas || !el.build || !el.reset) return;
 
+  // =========================
+  // Defaults: date range
+  // =========================
   const today = new Date();
   const end = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
   const start = new Date(end.getTime() - 1000 * 60 * 60 * 24 * 365 * 3);
   el.startDate.value = iso(start);
   el.endDate.value = iso(end);
-
-  // =========================
-  // BEGINNER / ADVANCED MODE
-  // =========================
-  const SP_PREF_KEY = "microdca_sp_prefs_v1";
-
-  function loadPrefs() {
-    try {
-      const raw = localStorage.getItem(SP_PREF_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  }
-  function savePrefs(p) {
-    try {
-      localStorage.setItem(SP_PREF_KEY, JSON.stringify(p));
-    } catch {}
-  }
-
-  function applyModeVisibility() {
-    const adv = !!el.advancedMode?.checked;
-
-    // In beginner mode, force advanced tools OFF.
-    if (!adv) {
-      if (el.showMarginAdvanced) el.showMarginAdvanced.checked = false;
-      if (el.showIncomeCard) el.showIncomeCard.checked = false;
-      if (el.showIncomeAdvanced) el.showIncomeAdvanced.checked = false;
-      if (el.showBillsCard) el.showBillsCard.checked = false;
-    }
-
-    if (el.advancedToggles) el.advancedToggles.style.display = adv ? "flex" : "none";
-    if (el.modeLabel) el.modeLabel.textContent = adv ? "Advanced" : "Beginner";
-
-    const showMarginAdv = adv && !!el.showMarginAdvanced?.checked;
-    const showIncome = adv && !!el.showIncomeCard?.checked;
-    const showIncomeAdv = adv && !!el.showIncomeAdvanced?.checked;
-    const showBills = adv && !!el.showBillsCard?.checked;
-
-    // Entire cards
-    document.querySelectorAll('[data-adv-card="income"]').forEach((node) => {
-      node.classList.toggle("is-hidden", !showIncome);
-    });
-    document.querySelectorAll('[data-adv-card="bills"]').forEach((node) => {
-      node.classList.toggle("is-hidden", !showBills);
-    });
-
-    // Advanced sub-controls
-    document.querySelectorAll('[data-adv="margin"]').forEach((node) => {
-      node.style.display = showMarginAdv ? "" : "none";
-    });
-    document.querySelectorAll('[data-adv="income"]').forEach((node) => {
-      node.style.display = showIncomeAdv ? "" : "none";
-    });
-
-    // Keep the logic consistent with what is visible
-    if (!showIncome && el.incomeOn) el.incomeOn.checked = false;
-    if (!showBills && el.billsOn) el.billsOn.checked = false;
-
-    savePrefs({
-      advanced: adv,
-      showMarginAdvanced: !!el.showMarginAdvanced?.checked,
-      showIncome: !!el.showIncomeCard?.checked,
-      showIncomeAdvanced: !!el.showIncomeAdvanced?.checked,
-      showBills: !!el.showBillsCard?.checked,
-    });
-  }
-
-  function initModeFromPrefs() {
-    const p = loadPrefs();
-    if (el.advancedMode) el.advancedMode.checked = !!p.advanced;
-    if (el.showMarginAdvanced) el.showMarginAdvanced.checked = !!p.showMarginAdvanced;
-    if (el.showIncomeCard) el.showIncomeCard.checked = !!p.showIncome;
-    if (el.showIncomeAdvanced) el.showIncomeAdvanced.checked = !!p.showIncomeAdvanced;
-    if (el.showBillsCard) el.showBillsCard.checked = !!p.showBills;
-
-    applyModeVisibility();
-
-    el.advancedMode?.addEventListener("change", applyModeVisibility);
-    el.showMarginAdvanced?.addEventListener("change", applyModeVisibility);
-    el.showIncomeCard?.addEventListener("change", applyModeVisibility);
-    el.showIncomeAdvanced?.addEventListener("change", applyModeVisibility);
-    el.showBillsCard?.addEventListener("change", applyModeVisibility);
-  }
-
-  function syncIncomeModeUI() {
-    const mode = el.incomeMode?.value;
-    if (!mode) return;
-
-    if (mode === "price_band") {
-      el.bandRow?.classList.remove("hidden");
-      el.targetRow?.classList.add("hidden");
-    } else if (mode === "target_ratio") {
-      el.bandRow?.classList.add("hidden");
-      el.targetRow?.classList.remove("hidden");
-    } else {
-      el.bandRow?.classList.add("hidden");
-      el.targetRow?.classList.add("hidden");
-    }
-  }
-  el.incomeMode?.addEventListener("change", syncIncomeModeUI);
-  syncIncomeModeUI();
-
-  initModeFromPrefs();
 
   function log(msg) {
     const t = new Date();
@@ -268,36 +179,300 @@
     }, 2600);
   }
 
-  function previewAlloc() {
-    const tickers = (el.coreTickers?.value || "")
+  // =========================
+  // Beginner / Advanced logic
+  // =========================
+  const LS_KEY = "microdca_sim_portfolio_ui_v1";
+  const defaultUI = {
+    advanced: false,
+    showMargin: false,
+    showIncome: false,
+    showIncomeAdv: false,
+    showBills: false,
+  };
+
+  function loadUI() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return { ...defaultUI };
+      const obj = JSON.parse(raw);
+      return { ...defaultUI, ...obj };
+    } catch {
+      return { ...defaultUI };
+    }
+  }
+
+  function saveUI(ui) {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(ui));
+    } catch {}
+  }
+
+  let ui = loadUI();
+
+  function setAdvanced(on) {
+    ui.advanced = !!on;
+    el.modeToggle?.setAttribute("aria-pressed", ui.advanced ? "true" : "false");
+    el.modeState.textContent = ui.advanced ? "Advanced" : "Beginner";
+
+    // Advanced options bar visibility
+    if (ui.advanced) el.advancedOptions.classList.remove("hidden");
+    else el.advancedOptions.classList.add("hidden");
+
+    // Optional modules:
+    // In Beginner mode, always hide advanced sections regardless of checkboxes.
+    renderOptionalModules();
+    saveUI(ui);
+  }
+
+  function renderOptionalModules() {
+    const adv = ui.advanced;
+
+    // Margin+Income block: only if advanced AND showMargin or showIncome
+    const wantMarginIncome = adv && (ui.showMargin || ui.showIncome);
+    if (wantMarginIncome) el.secMarginIncome.classList.remove("hidden");
+    else el.secMarginIncome.classList.add("hidden");
+
+    // Bills/Taxes block: only if advanced AND showBills
+    if (adv && ui.showBills) el.secBillsTaxes.classList.remove("hidden");
+    else el.secBillsTaxes.classList.add("hidden");
+
+    // Advanced income controls subsection: only if advanced AND showIncome AND showIncomeAdv
+    const wantIncomeAdv = adv && ui.showIncome && ui.showIncomeAdv;
+    if (wantIncomeAdv) el.secIncomeAdvanced.classList.remove("hidden");
+    else el.secIncomeAdvanced.classList.add("hidden");
+
+    // Also, if user hides income engine, auto-hide advanced income controls
+    if (!ui.showIncome) {
+      ui.showIncomeAdv = false;
+      if (el.showIncomeAdv) el.showIncomeAdv.checked = false;
+    }
+
+    // If user hides margin module, force margin OFF
+    if (!ui.showMargin && el.useMargin) el.useMargin.checked = false;
+
+    // If user hides income module, force income OFF
+    if (!ui.showIncome && el.incomeOn) el.incomeOn.checked = false;
+
+    // Keep checkboxes in sync
+    if (el.showMargin) el.showMargin.checked = !!ui.showMargin;
+    if (el.showIncome) el.showIncome.checked = !!ui.showIncome;
+    if (el.showIncomeAdv) el.showIncomeAdv.checked = !!ui.showIncomeAdv;
+    if (el.showBills) el.showBills.checked = !!ui.showBills;
+
+    saveUI(ui);
+  }
+
+  el.modeToggle?.addEventListener("click", () => setAdvanced(!ui.advanced));
+  el.showMargin?.addEventListener("change", () => {
+    ui.showMargin = !!el.showMargin.checked;
+    renderOptionalModules();
+  });
+  el.showIncome?.addEventListener("change", () => {
+    ui.showIncome = !!el.showIncome.checked;
+    renderOptionalModules();
+  });
+  el.showIncomeAdv?.addEventListener("change", () => {
+    ui.showIncomeAdv = !!el.showIncomeAdv.checked;
+    renderOptionalModules();
+  });
+  el.showBills?.addEventListener("change", () => {
+    ui.showBills = !!el.showBills.checked;
+    renderOptionalModules();
+  });
+
+  // Initialize mode UI from storage
+  setAdvanced(ui.advanced);
+
+  // =========================
+  // Income mode UI (target/band rows)
+  // =========================
+  function syncIncomeModeUI() {
+    const mode = el.incomeMode?.value || "interest_only";
+    if (!el.targetRow || !el.bandRow) return;
+
+    if (mode === "price_band") {
+      el.bandRow.classList.remove("hidden");
+      el.targetRow.classList.add("hidden");
+    } else if (mode === "target_ratio") {
+      el.bandRow.classList.add("hidden");
+      el.targetRow.classList.remove("hidden");
+    } else {
+      el.bandRow.classList.add("hidden");
+      el.targetRow.classList.add("hidden");
+    }
+  }
+  el.incomeMode?.addEventListener("change", syncIncomeModeUI);
+  syncIncomeModeUI();
+
+  // =========================
+  // Core Assets dynamic rows (up to 10)
+  // =========================
+  const CORE_MAX = 10;
+
+  function parseCommaList(v) {
+    return String(v || "")
       .split(",")
-      .map((s) => s.trim().toUpperCase())
+      .map((s) => s.trim())
       .filter(Boolean);
-    const weights = normWeights((el.coreWeights?.value || "").split(",").map((s) => s.trim()));
+  }
+
+  function createCoreRow(ticker = "", weight = "") {
+    const row = document.createElement("div");
+    row.className = "core-row";
+    row.innerHTML = `
+      <div>
+        <label>Ticker</label>
+        <input class="core-ticker" placeholder="e.g., SPY" value="${String(ticker || "").toUpperCase()}" />
+      </div>
+      <div>
+        <label>Target %</label>
+        <input class="core-weight" type="number" min="0" step="0.01" placeholder="e.g., 50" value="${weight !== "" ? weight : ""}" />
+      </div>
+      <button type="button" class="rm" title="Remove">–</button>
+    `;
+
+    const rm = row.querySelector(".rm");
+    rm.addEventListener("click", () => {
+      row.remove();
+      syncCoreHiddenFields();
+      previewAlloc();
+      syncAddButton();
+    });
+
+    // auto sync on change
+    row.querySelector(".core-ticker").addEventListener("input", () => {
+      syncCoreHiddenFields();
+    });
+    row.querySelector(".core-weight").addEventListener("input", () => {
+      syncCoreHiddenFields();
+    });
+
+    return row;
+  }
+
+  function syncAddButton() {
+    const count = el.coreRows.querySelectorAll(".core-row").length;
+    if (el.addCoreAsset) el.addCoreAsset.disabled = count >= CORE_MAX;
+  }
+
+  function seedCoreRowsFromHidden() {
+    const tickers = parseCommaList(el.coreTickersHidden?.value || "SPY,QQQ").map((t) => t.toUpperCase());
+    const weights = parseCommaList(el.coreWeightsHidden?.value || "50,50").map((w) => Number(w));
+
+    el.coreRows.innerHTML = "";
+
+    // Default to 2 rows minimum for approachability
+    const minRows = Math.max(2, tickers.length || 0);
+
+    for (let i = 0; i < minRows; i++) {
+      const t = tickers[i] || "";
+      const w = isFinite(weights[i]) ? String(weights[i]) : "";
+      el.coreRows.appendChild(createCoreRow(t, w));
+    }
+    syncAddButton();
+    syncCoreHiddenFields();
+  }
+
+  function getCoreAllocFromRows() {
+    const rows = [...el.coreRows.querySelectorAll(".core-row")];
+    const tickers = [];
+    const weights = [];
+
+    for (const r of rows) {
+      const t = String(r.querySelector(".core-ticker")?.value || "").trim().toUpperCase();
+      const w = Number(r.querySelector(".core-weight")?.value || 0);
+
+      if (!t) continue;
+      tickers.push(t);
+      weights.push(isFinite(w) ? w : 0);
+    }
+
+    // De-duplicate tickers (keep first occurrence)
+    const seen = new Set();
+    const t2 = [];
+    const w2 = [];
+    for (let i = 0; i < tickers.length; i++) {
+      const t = tickers[i];
+      if (seen.has(t)) continue;
+      seen.add(t);
+      t2.push(t);
+      w2.push(weights[i]);
+    }
+
+    // If user left weights blank/zero, equal-weight them for safety
+    const sum = w2.reduce((p, c) => p + (isFinite(c) ? c : 0), 0);
+    let wNorm;
+    if (sum <= 0) {
+      wNorm = t2.map(() => (t2.length ? 1 / t2.length : 0));
+    } else {
+      wNorm = normWeights(w2);
+    }
+
+    return { tickers: t2, weights: wNorm };
+  }
+
+  function syncCoreHiddenFields() {
+    const rows = [...el.coreRows.querySelectorAll(".core-row")];
+    const tickers = [];
+    const weights = [];
+
+    for (const r of rows) {
+      const t = String(r.querySelector(".core-ticker")?.value || "").trim().toUpperCase();
+      const wRaw = r.querySelector(".core-weight")?.value;
+      const w = Number(wRaw);
+
+      if (!t) continue;
+      tickers.push(t);
+      weights.push(isFinite(w) ? w : 0);
+    }
+
+    // Keep hidden comma fields updated (legacy)
+    if (el.coreTickersHidden) el.coreTickersHidden.value = tickers.join(",");
+    if (el.coreWeightsHidden) el.coreWeightsHidden.value = weights.join(",");
+  }
+
+  function previewAlloc() {
+    const alloc = getCoreAllocFromRows();
+    const tickers = alloc.tickers;
+    const weights = alloc.weights;
+
     if (!el.allocPreview) return;
+    el.allocPreview.innerHTML = "";
 
-    // If spAllocPreview is tbody (original) or table body itself, support both.
-    const tbody = el.allocPreview.tagName?.toLowerCase() === "tbody" ? el.allocPreview : el.allocPreview;
+    if (!tickers.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="3">Add at least one ticker.</td>`;
+      el.allocPreview.appendChild(tr);
+      return;
+    }
 
-    tbody.innerHTML = "";
     tickers.forEach((t, i) => {
       const w = weights[i] ?? 0;
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td style="padding:8px; border-bottom:1px solid rgba(255,255,255,0.06);" class="mono">${t}</td>
-        <td style="padding:8px; border-bottom:1px solid rgba(255,255,255,0.06);" class="mono">${(w * 100).toFixed(2)}%</td>
-        <td style="padding:8px; border-bottom:1px solid rgba(255,255,255,0.06);">${i === 0 ? "Anchor position" : "Satellite / diversifier"}</td>
+        <td class="mono">${t}</td>
+        <td class="mono">${(w * 100).toFixed(2)}%</td>
+        <td>${i === 0 ? "Anchor position" : "Satellite / diversifier"}</td>
       `;
-      tbody.appendChild(tr);
+      el.allocPreview.appendChild(tr);
     });
-
-    if (!tickers.length) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="3" style="padding:8px; color:rgba(245,245,245,0.55);">Add tickers to preview allocation.</td>`;
-      tbody.appendChild(tr);
-    }
   }
-  el.updateAlloc?.addEventListener("click", previewAlloc);
+
+  el.addCoreAsset?.addEventListener("click", () => {
+    const count = el.coreRows.querySelectorAll(".core-row").length;
+    if (count >= CORE_MAX) return;
+    el.coreRows.appendChild(createCoreRow("", ""));
+    syncAddButton();
+  });
+
+  el.previewAllocBtn?.addEventListener("click", () => {
+    syncCoreHiddenFields();
+    previewAlloc();
+  });
+
+  // init rows + preview
+  seedCoreRowsFromHidden();
   previewAlloc();
 
   // =========================
@@ -306,7 +481,6 @@
   async function fetchDailyCloses(ticker) {
     const t = String(ticker || "").trim().toUpperCase();
     if (!t) throw new Error("Missing ticker");
-
     const url = `${PRICE_PROXY_BASE}/api/prices?ticker=${encodeURIComponent(t)}`;
     const res = await fetch(url, { mode: "cors" });
     if (!res.ok) throw new Error(`Price fetch failed (${ticker})`);
@@ -366,6 +540,7 @@
       maps[t] = m;
     });
 
+    // choose shortest history as base (max overlap chance)
     let base = tickers[0];
     for (const t of tickers) if (seriesByTicker[t].length < seriesByTicker[base].length) base = t;
 
@@ -575,14 +750,11 @@
     const ev = {
       dep: new Array(n).fill(0),
       buy: new Array(n).fill(0),
-
       income: new Array(n).fill(0),
       interest: new Array(n).fill(0),
-
       paydown: new Array(n).fill(0),
       borrowAdj: new Array(n).fill(0),
       borrowBuy: new Array(n).fill(0),
-
       dist: new Array(n).fill(0),
       tax: new Array(n).fill(0),
       bills: new Array(n).fill(0),
@@ -600,19 +772,9 @@
     const split = clamp((Number(incomeSplit) || 0) / 100, 0, 1);
     const taxRate = clamp((Number(taxRatePct) || 0) / 100, 0, 0.95);
 
-    function valueOf(ticker, i) {
-      return shares[ticker] * prices[ticker][i];
-    }
-    function pv(i) {
-      let v = 0;
-      for (const t of allTickers) v += valueOf(t, i);
-      return v;
-    }
-    function incValue(i) {
-      let v = 0;
-      for (const t of incTickers) v += valueOf(t, i);
-      return v;
-    }
+    function valueOf(ticker, i) { return shares[ticker] * prices[ticker][i]; }
+    function pv(i) { let v = 0; for (const t of allTickers) v += valueOf(t, i); return v; }
+    function incValue(i) { let v = 0; for (const t of incTickers) v += valueOf(t, i); return v; }
 
     function sleeveWeightsForRebalance(i, sleeveTickers, sleeveWeights) {
       let w = sleeveWeights.slice();
@@ -624,7 +786,6 @@
         curV[t] = valueOf(t, i);
         sleeveV += curV[t];
       });
-
       if (sleeveV <= 0) return w;
 
       const curW = {};
@@ -671,7 +832,6 @@
 
     function allocateToSleeve(i, amt, sleeveTickers, sleeveWeights) {
       if (amt <= 0 || sleeveTickers.length === 0) return;
-
       const w = sleeveWeightsForRebalance(i, sleeveTickers, sleeveWeights);
 
       for (let k = 0; k < sleeveTickers.length; k++) {
@@ -717,9 +877,7 @@
       const taxPay = Math.min(cash, taxAmt);
 
       if (taxPay > 0) {
-        if (taxHandling === "reserve") {
-          taxReserve += taxPay;
-        }
+        if (taxHandling === "reserve") taxReserve += taxPay;
         cash -= taxPay;
         ev.tax[i] = taxPay;
       }
@@ -733,9 +891,7 @@
           billsPaidCum += pay;
         }
         const short = billsNeed - pay;
-        if (short > 0) {
-          ev.billsShort[i] = short;
-        }
+        if (short > 0) ev.billsShort[i] = short;
       }
     }
 
@@ -746,16 +902,8 @@
       const ltv = v > 0 ? debt / v : 0;
       coverArr[i] = interestToday > 0 ? incomeToday / interestToday : incomeToday > 0 ? Infinity : NaN;
 
-      if (!incomeOn) {
-        targetDevArr[i] = 0;
-        return;
-      }
-
-      if (incomeMode === "interest_only") {
-        targetDevArr[i] = 0;
-        return;
-      }
-
+      if (!incomeOn) { targetDevArr[i] = 0; return; }
+      if (incomeMode === "interest_only") { targetDevArr[i] = 0; return; }
       if (incomeMode === "interest_plus_principal") {
         payDownDebt(i, cash);
         targetDevArr[i] = 0;
@@ -770,11 +918,8 @@
       const desiredDebt = Math.max(0, target * v);
       const delta = desiredDebt - debt;
 
-      if (delta < 0) {
-        payDownDebt(i, Math.min(cash, Math.abs(delta)));
-      } else if (delta > 0) {
-        if (allowTargetBorrow) borrowToCash(i, delta, "adj");
-      }
+      if (delta < 0) payDownDebt(i, Math.min(cash, Math.abs(delta)));
+      else if (delta > 0) { if (allowTargetBorrow) borrowToCash(i, delta, "adj"); }
     }
 
     for (let i = 0; i < n; i++) {
@@ -833,14 +978,16 @@
       billsPaidArr[i] = billsPaidCum;
 
       if (!isFinite(coverArr[i])) {
-        coverArr[i] =
-          ev.interest[i] > 0 ? ev.income[i] / ev.interest[i] : ev.income[i] > 0 ? Infinity : NaN;
+        coverArr[i] = ev.interest[i] > 0 ? ev.income[i] / ev.interest[i] : ev.income[i] > 0 ? Infinity : NaN;
       }
     }
 
     return { dates, equityArr, debtArr, ltvArr, coverArr, targetDevArr, taxReserveArr, billsPaidArr, events: ev };
   }
 
+  // =========================
+  // Canvas rendering
+  // =========================
   const ctx = el.canvas.getContext("2d");
 
   function resizeCanvasToCSS() {
@@ -873,8 +1020,7 @@
 
   function minMax(arr, upto) {
     const a = arr.slice(0, Math.max(1, upto + 1));
-    let mn = Infinity,
-      mx = -Infinity;
+    let mn = Infinity, mx = -Infinity;
     for (const v of a) {
       if (!isFinite(v)) continue;
       if (v < mn) mn = v;
@@ -890,46 +1036,29 @@
   function plotLine(arr, upto, w, h, pad, stroke, range, alpha = 1) {
     const n = arr.length;
     if (!n) return;
-
     const u = Math.max(0, Math.min(Math.floor(upto), n - 1));
 
-    const x0 = pad,
-      x1 = w - pad;
-    const y0 = pad,
-      y1 = h - pad;
-    const mn = range.mn,
-      mx = range.mx;
+    const x0 = pad, x1 = w - pad;
+    const y0 = pad, y1 = h - pad;
+    const mn = range.mn, mx = range.mx;
     const span = (mx - mn) || 1;
 
     ctx.lineWidth = 2;
     ctx.strokeStyle = stroke;
     ctx.globalAlpha = alpha;
 
-    let xFirst = null,
-      yFirst = null;
+    let xFirst = null, yFirst = null;
     let started = false;
 
     ctx.beginPath();
     for (let i = 0; i <= u; i++) {
       const v = arr[i];
-      if (!isFinite(v)) {
-        started = false;
-        continue;
-      }
+      if (!isFinite(v)) { started = false; continue; }
       const x = x0 + (x1 - x0) * (i / (n - 1));
       const y = y1 - (y1 - y0) * ((v - mn) / span);
-
-      if (xFirst === null) {
-        xFirst = x;
-        yFirst = y;
-      }
-
-      if (!started) {
-        ctx.moveTo(x, y);
-        started = true;
-      } else {
-        ctx.lineTo(x, y);
-      }
+      if (xFirst === null) { xFirst = x; yFirst = y; }
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
     }
     ctx.stroke();
 
@@ -944,8 +1073,7 @@
   }
 
   function drawCursor(i, w, h, pad, n) {
-    const x0 = pad,
-      x1 = w - pad;
+    const x0 = pad, x1 = w - pad;
     const x = x0 + (x1 - x0) * (i / (n - 1));
     ctx.strokeStyle = "rgba(239,81,34,0.55)";
     ctx.lineWidth = 1;
@@ -959,8 +1087,7 @@
     const zoneH = 64;
     const baseY = h - pad - 6;
     const topY = baseY - zoneH;
-    const x0 = pad,
-      x1 = w - pad;
+    const x0 = pad, x1 = w - pad;
     const n = state.cashSim.dates.length;
 
     ctx.fillStyle = "rgba(255,255,255,0.03)";
@@ -1061,48 +1188,22 @@
     let grade = "LOW";
     let signal = "Healthy buffer";
 
-    if (prox >= 0.5) {
-      grade = "MODERATE";
-      signal = "Leverage is material";
-    }
-    if (prox >= 0.7) {
-      grade = "ELEVATED";
-      signal = "Stress can accelerate risk";
-    }
-    if (prox >= 0.85) {
-      grade = "HIGH";
-      signal = "Close to limit";
-    }
-    if (prox >= 0.95) {
-      grade = "CRITICAL";
-      signal = "Very low buffer";
-    }
-    if (prox >= 1.0) {
-      grade = "LIMIT";
-      signal = "At or beyond max LTV";
-    }
+    if (prox >= 0.5) { grade = "MODERATE"; signal = "Leverage is material"; }
+    if (prox >= 0.7) { grade = "ELEVATED"; signal = "Stress can accelerate risk"; }
+    if (prox >= 0.85) { grade = "HIGH"; signal = "Close to limit"; }
+    if (prox >= 0.95) { grade = "CRITICAL"; signal = "Very low buffer"; }
+    if (prox >= 1.0) { grade = "LIMIT"; signal = "At or beyond max LTV"; }
 
-    if (isFinite(cover) && cover >= 1 && prox < 0.95) {
-      signal = "Income covers interest";
-    }
-    if (isFinite(cover) && cover < 1 && prox >= 0.7) {
-      signal = "Income does not cover interest";
-    }
+    if (isFinite(cover) && cover >= 1 && prox < 0.95) signal = "Income covers interest";
+    if (isFinite(cover) && cover < 1 && prox >= 0.7) signal = "Income does not cover interest";
 
     el.riskGrade.textContent = grade;
     el.riskSignal.textContent = signal;
 
     if (state.calloutsOn) {
-      if (prox >= 0.95 && !state.alerted95) {
-        state.alerted95 = true;
-        showAlert("Risk Alert: LTV is above 95% of max. Buffer is very low.");
-      } else if (prox >= 0.85 && !state.alerted85) {
-        state.alerted85 = true;
-        showAlert("Risk Alert: LTV above 85% of max. You are close to the limit.");
-      } else if (prox >= 0.7 && !state.alerted70) {
-        state.alerted70 = true;
-        showAlert("Risk Alert: LTV above 70% of max. Stress events matter more now.");
-      }
+      if (prox >= 0.95 && !state.alerted95) { state.alerted95 = true; showAlert("Risk Alert: LTV is above 95% of max. Buffer is very low."); }
+      else if (prox >= 0.85 && !state.alerted85) { state.alerted85 = true; showAlert("Risk Alert: LTV above 85% of max. You are close to the limit."); }
+      else if (prox >= 0.7 && !state.alerted70) { state.alerted70 = true; showAlert("Risk Alert: LTV above 70% of max. Stress events matter more now."); }
     }
   }
 
@@ -1113,13 +1214,10 @@
     playing: false,
     i: 0,
     lastTs: 0,
-
     cashSim: null,
     marginSim: null,
-
     meta: { name: "", useMargin: false, maxLTV: 0 },
     calloutsOn: true,
-
     alerted70: false,
     alerted85: false,
     alerted95: false,
@@ -1217,10 +1315,7 @@
 
   function safeFileBase() {
     const name = (state.meta?.name || "simulated-portfolio").trim() || "simulated-portfolio";
-    const clean = name
-      .replace(/[^a-z0-9\-_]+/gi, "-")
-      .replace(/-+/g, "-")
-      .replace(/(^-|-$)/g, "");
+    const clean = name.replace(/[^a-z0-9\-_]+/gi, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
     const start = state.cashSim?.dates?.[0] || "";
     const end = state.cashSim?.dates?.[state.cashSim.dates.length - 1] || "";
     return `${clean}_${start}_to_${end}`.replace(/__+/g, "_");
@@ -1238,30 +1333,18 @@
   }
 
   function downloadCanvasPNG() {
-    if (!state.built) {
-      showAlert("Build a simulation first.");
-      return;
-    }
+    if (!state.built) { showAlert("Build a simulation first."); return; }
     drawFrame(Math.floor(state.i));
     const filename = `${safeFileBase()}.png`;
-    el.canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          showAlert("PNG export failed.");
-          return;
-        }
-        downloadBlob(blob, filename);
-        log(`Exported PNG: ${filename}`);
-      },
-      "image/png"
-    );
+    el.canvas.toBlob((blob) => {
+      if (!blob) { showAlert("PNG export failed."); return; }
+      downloadBlob(blob, filename);
+      log(`Exported PNG: ${filename}`);
+    }, "image/png");
   }
 
   function downloadSimulationCSV() {
-    if (!state.built) {
-      showAlert("Build a simulation first.");
-      return;
-    }
+    if (!state.built) { showAlert("Build a simulation first."); return; }
 
     const dates = state.cashSim.dates;
     const eqCash = state.cashSim.equityArr;
@@ -1287,25 +1370,9 @@
     const billsShort = ev.billsShort || [];
 
     const header = [
-      "date",
-      "equity_cash_only",
-      "equity_with_margin",
-      "debt",
-      "ltv",
-      "income_coverage",
-      "tax_reserve",
-      "bills_paid_cum",
-      "event_deposit",
-      "event_buy",
-      "event_income_daily",
-      "event_interest",
-      "event_paydown",
-      "event_borrow_adjust",
-      "event_borrow_buy",
-      "event_dist_monthly",
-      "event_tax",
-      "event_bills",
-      "event_bills_short",
+      "date","equity_cash_only","equity_with_margin","debt","ltv","income_coverage","tax_reserve","bills_paid_cum",
+      "event_deposit","event_buy","event_income_daily","event_interest","event_paydown","event_borrow_adjust","event_borrow_buy",
+      "event_dist_monthly","event_tax","event_bills","event_bills_short",
     ].join(",");
 
     const rows = [header];
@@ -1347,6 +1414,10 @@
     showAlert(null);
     state.alerted70 = state.alerted85 = state.alerted95 = false;
 
+    // Ensure core inputs sync
+    syncCoreHiddenFields();
+    previewAlloc();
+
     const name = (el.name.value || "").trim();
     const startCash = Math.max(0, Number(el.startCash.value) || 0);
     const dcaAmt = Math.max(0, Number(el.dcaAmt.value) || 0);
@@ -1359,33 +1430,33 @@
       return;
     }
 
-    const coreTickers = (el.coreTickers.value || "")
-      .split(",")
-      .map((s) => s.trim().toUpperCase())
-      .filter(Boolean);
-    const coreWeightsRaw = normWeights((el.coreWeights.value || "").split(",").map((s) => s.trim()));
+    // Core allocation from rows (approachable + reliable)
+    const coreAlloc = getCoreAllocFromRows();
+    const coreTickers = coreAlloc.tickers;
+    const coreW = coreAlloc.weights;
+
     if (!coreTickers.length) {
       log("Add at least one core ticker.");
+      showAlert("Add at least one core ticker.");
       return;
     }
 
-    const incomeOn = !!el.incomeOn?.checked;
+    // Income only if module is shown + enabled
+    const incomeOn = !!el.incomeOn.checked;
     const incTickers = incomeOn
-      ? (el.incomeTickers.value || "")
-          .split(",")
-          .map((s) => s.trim().toUpperCase())
-          .filter(Boolean)
+      ? String(el.incomeTickers.value || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean)
       : [];
-    const incWeightsRaw = incomeOn ? normWeights((el.incomeWeights.value || "").split(",").map((s) => s.trim())) : [];
+    const incWeightsRaw = incomeOn ? normWeights(String(el.incomeWeights.value || "").split(",").map((s) => s.trim())) : [];
 
-    const incomeSplit = clamp(Number(el.incomeSplit?.value) || 0, 0, 100);
-    const incomeYieldAPR = Math.max(0, Number(el.incomeYield?.value) || 0);
+    const incomeSplit = clamp(Number(el.incomeSplit.value) || 0, 0, 100);
+    const incomeYieldAPR = Math.max(0, Number(el.incomeYield.value) || 0);
 
-    const useMargin = !!el.useMargin.checked && (el.marginPolicy?.value || "assist") !== "off";
+    // Margin only if module is shown + enabled (and policy not off)
+    const useMargin = !!el.useMargin.checked && el.marginPolicy.value !== "off";
     const marginRateAPR = Math.max(0, Number(el.marginRate.value) || 0);
     const maxLTV = clamp((Number(el.maxLTV.value) || 0) / 100, 0, 0.95);
-    const marginPolicy = el.marginPolicy?.value || "assist";
-    const dayCount = Number(el.dayCount?.value) || 365;
+    const marginPolicy = el.marginPolicy.value;
+    const dayCount = Number(el.dayCount.value) || 365;
 
     const incomeMode = el.incomeMode?.value || "interest_only";
     const adjustFreq = el.adjustFreq?.value || "weekly";
@@ -1402,8 +1473,12 @@
     const billsFallback = el.billsFallback?.value || "cash";
     const taxHandling = el.taxHandling?.value || "reserve";
 
-    previewAlloc();
+    // Income weights normalized with fallback
+    const incWeights = incTickers.map((_, i) => incWeightsRaw[i] ?? (incTickers.length ? 1 / incTickers.length : 0));
+    const incSum = incWeights.reduce((p, c) => p + c, 0) || 1;
+    const incW = incTickers.length ? incWeights.map((x) => x / incSum) : [];
 
+    // Load prices for needed tickers
     const allTickers = [...new Set([...coreTickers, ...incTickers])];
     log(`Loading prices for ${allTickers.length} tickers...`);
     const series = await loadPricesForTickers(allTickers, startISO, endISO);
@@ -1411,33 +1486,22 @@
 
     if (aligned.dates.length < 80) {
       log("Not enough overlapping history across tickers. Try a wider range or fewer tickers.");
+      showAlert("Not enough overlapping history. Try a wider range or fewer tickers.");
       return;
     }
 
-    // aligned.prices is keyed by ticker symbol
+    // Guard: aligned.prices keyed by ticker
     const prices = {};
-    const needed = [...new Set([...coreTickers, ...incTickers])];
-
-    for (const t of needed) {
+    for (const t of allTickers) {
       const seriesArr = aligned?.prices?.[t];
       if (!seriesArr || !Array.isArray(seriesArr) || seriesArr.length === 0) {
-        throw new Error(
-          `Aligned timeline missing ticker: ${t}. Try a wider date range or remove the shortest-history ticker.`
-        );
+        throw new Error(`Aligned timeline missing ticker: ${t}. Try a wider date range or remove the shortest-history ticker.`);
       }
       if (seriesArr.length !== aligned.dates.length) {
         throw new Error(`Aligned series length mismatch for ${t}: ${seriesArr.length} vs dates ${aligned.dates.length}`);
       }
       prices[t] = seriesArr;
     }
-
-    const coreWeights = coreTickers.map((_, i) => coreWeightsRaw[i] ?? 1 / coreTickers.length);
-    const coreSum = coreWeights.reduce((p, c) => p + c, 0) || 1;
-    const coreW = coreWeights.map((x) => x / coreSum);
-
-    const incWeights = incTickers.map((_, i) => incWeightsRaw[i] ?? (incTickers.length ? 1 / incTickers.length : 0));
-    const incSum = incWeights.reduce((p, c) => p + c, 0) || 1;
-    const incW = incTickers.length ? incWeights.map((x) => x / incSum) : [];
 
     const cashSim = simulateCashOnly({
       dates: aligned.dates,
@@ -1495,29 +1559,26 @@
     drawFrame(0);
 
     log(`Built: ${aligned.dates.length} market days.`);
-    log("Tip: Use Play or Step to advance the animation (Day 1 shows a dot, then a line as days progress).");
-    log(
-      `With margin: ${useMargin ? "ON" : "OFF"} • income: ${incomeOn ? "ON" : "OFF"} • bills/taxes: ${
-        billsOn ? "ON" : "OFF"
-      }.`
-    );
+    log("Tip: Use Play or Step to advance the animation.");
+    log(`With margin: ${useMargin ? "ON" : "OFF"} • income: ${incomeOn ? "ON" : "OFF"} • bills/taxes: ${billsOn ? "ON" : "OFF"}.`);
   }
 
-  // Wiring
+  // Wiring: speed
   el.speed.addEventListener("input", () => {
     el.speedLabel.textContent = `${el.speed.value} d/s`;
   });
   el.speedLabel.textContent = `${el.speed.value} d/s`;
 
+  // Build
   el.build.addEventListener("click", () => {
     buildSimulation().catch((e) => {
       console.error(e);
       log(`Build failed: ${e?.message || e}`);
-      if (e?.stack) log(e.stack.split("\n").slice(0, 6).join(" | "));
       showAlert(`Build failed: ${e?.message || e}`);
     });
   });
 
+  // Reset
   el.reset.addEventListener("click", () => {
     state.built = false;
     state.playing = false;
@@ -1552,6 +1613,7 @@
     ctx2.clearRect(0, 0, el.canvas.width, el.canvas.height);
   });
 
+  // Playback controls
   el.play.addEventListener("click", () => {
     if (!state.built) return;
     const n = state.cashSim.dates.length;
