@@ -1,4 +1,5 @@
 (() => {
+  // Prevent double-load
   if (window.__microdcaSimulatedPortfolioLoaded) return;
   window.__microdcaSimulatedPortfolioLoaded = true;
 
@@ -10,6 +11,9 @@
   const PRICE_PROXY_BASE =
     (window.MICRODCA_PRICE_PROXY_BASE || "https://simulated-portfolio.microdca3.workers.dev").replace(/\/+$/, "");
 
+  // =========================
+  // Formatting helpers
+  // =========================
   const fmtUSD = (x) => {
     if (!isFinite(x)) return "—";
     const sign = x < 0 ? "-" : "";
@@ -23,7 +27,7 @@
   const normWeights = (arr) => {
     const clean = arr.map((x) => Math.max(0, Number(x) || 0));
     const s = clean.reduce((p, c) => p + c, 0);
-    if (s <= 0) return clean.map((_) => 0);
+    if (s <= 0) return clean.map(() => 0);
     return clean.map((x) => x / s);
   };
 
@@ -46,29 +50,10 @@
     return out;
   };
 
+  // =========================
+  // Element map (MATCHES YOUR CURRENT WEBFLOW HTML)
+  // =========================
   const el = {
-    // Mode + advanced options
-    modeToggle: $("spModeToggle"),
-    modeState: $("spModeState"),
-    advancedOptions: $("spAdvancedOptions"),
-    showMargin: $("spShowMargin"),
-    showIncome: $("spShowIncome"),
-    showIncomeAdv: $("spShowIncomeAdv"),
-    showBills: $("spShowBills"),
-
-    // Sections
-    secMarginIncome: $("secMarginIncome"),
-    secIncomeAdvanced: $("secIncomeAdvanced"),
-    secBillsTaxes: $("secBillsTaxes"),
-
-    // Core rows
-    coreRows: $("spCoreRows"),
-    addCoreAsset: $("spAddCoreAsset"),
-    previewAllocBtn: $("spPreviewAlloc"),
-    coreTickersHidden: $("spTickers"),
-    coreWeightsHidden: $("spWeights"),
-    allocPreview: $("spAllocPreview")?.querySelector("tbody"),
-
     // Account basics
     name: $("spName"),
     startCash: $("spStartCash"),
@@ -77,6 +62,10 @@
     startDate: $("spStartDate"),
     endDate: $("spEndDate"),
     rebalance: $("spRebalance"),
+
+    // Core allocation (hidden legacy inputs; builder maintains these)
+    coreTickersHidden: $("spTickers"),
+    coreWeightsHidden: $("spWeights"),
 
     // Margin
     useMargin: $("spUseMargin"),
@@ -95,8 +84,6 @@
     adjustFreq: $("spAdjustFreq"),
     targetRatio: $("spTargetRatio"),
     targetBorrow: $("spTargetBorrow"),
-    targetRow: $("spTargetRow"),
-    bandRow: $("spBandRow"),
     bandMin: $("spBandMin"),
     bandMax: $("spBandMax"),
 
@@ -147,17 +134,12 @@
     canvas: $("spCanvas"),
   };
 
-  if (!el.canvas || !el.build || !el.reset) return;
+  // Hard guard: if these are missing, nothing can work.
+  if (!el.canvas || !el.build || !el.reset || !el.log) return;
 
   // =========================
-  // Defaults: date range
+  // Logging + error surfacing
   // =========================
-  const today = new Date();
-  const end = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
-  const start = new Date(end.getTime() - 1000 * 60 * 60 * 24 * 365 * 3);
-  el.startDate.value = iso(start);
-  el.endDate.value = iso(end);
-
   function log(msg) {
     const t = new Date();
     const stamp = t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -166,6 +148,7 @@
 
   let alertTimer = null;
   function showAlert(msg) {
+    if (!el.alert) return;
     if (!msg) {
       el.alert.style.display = "none";
       el.alert.textContent = "";
@@ -176,140 +159,35 @@
     clearTimeout(alertTimer);
     alertTimer = setTimeout(() => {
       el.alert.style.display = "none";
-    }, 2600);
+    }, 3500);
   }
 
-  // =========================
-  // Beginner / Advanced logic
-  // =========================
-  const LS_KEY = "microdca_sim_portfolio_ui_v1";
-  const defaultUI = {
-    advanced: false,
-    showMargin: false,
-    showIncome: false,
-    showIncomeAdv: false,
-    showBills: false,
-  };
-
-  function loadUI() {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (!raw) return { ...defaultUI };
-      const obj = JSON.parse(raw);
-      return { ...defaultUI, ...obj };
-    } catch {
-      return { ...defaultUI };
-    }
-  }
-
-  function saveUI(ui) {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(ui));
-    } catch {}
-  }
-
-  let ui = loadUI();
-
-  function setAdvanced(on) {
-    ui.advanced = !!on;
-    el.modeToggle?.setAttribute("aria-pressed", ui.advanced ? "true" : "false");
-    el.modeState.textContent = ui.advanced ? "Advanced" : "Beginner";
-
-    // Advanced options bar visibility
-    if (ui.advanced) el.advancedOptions.classList.remove("hidden");
-    else el.advancedOptions.classList.add("hidden");
-
-    // Optional modules:
-    // In Beginner mode, always hide advanced sections regardless of checkboxes.
-    renderOptionalModules();
-    saveUI(ui);
-  }
-
-  function renderOptionalModules() {
-    const adv = ui.advanced;
-
-    // Margin+Income block: only if advanced AND showMargin or showIncome
-    const wantMarginIncome = adv && (ui.showMargin || ui.showIncome);
-    if (wantMarginIncome) el.secMarginIncome.classList.remove("hidden");
-    else el.secMarginIncome.classList.add("hidden");
-
-    // Bills/Taxes block: only if advanced AND showBills
-    if (adv && ui.showBills) el.secBillsTaxes.classList.remove("hidden");
-    else el.secBillsTaxes.classList.add("hidden");
-
-    // Advanced income controls subsection: only if advanced AND showIncome AND showIncomeAdv
-    const wantIncomeAdv = adv && ui.showIncome && ui.showIncomeAdv;
-    if (wantIncomeAdv) el.secIncomeAdvanced.classList.remove("hidden");
-    else el.secIncomeAdvanced.classList.add("hidden");
-
-    // Also, if user hides income engine, auto-hide advanced income controls
-    if (!ui.showIncome) {
-      ui.showIncomeAdv = false;
-      if (el.showIncomeAdv) el.showIncomeAdv.checked = false;
-    }
-
-    // If user hides margin module, force margin OFF
-    if (!ui.showMargin && el.useMargin) el.useMargin.checked = false;
-
-    // If user hides income module, force income OFF
-    if (!ui.showIncome && el.incomeOn) el.incomeOn.checked = false;
-
-    // Keep checkboxes in sync
-    if (el.showMargin) el.showMargin.checked = !!ui.showMargin;
-    if (el.showIncome) el.showIncome.checked = !!ui.showIncome;
-    if (el.showIncomeAdv) el.showIncomeAdv.checked = !!ui.showIncomeAdv;
-    if (el.showBills) el.showBills.checked = !!ui.showBills;
-
-    saveUI(ui);
-  }
-
-  el.modeToggle?.addEventListener("click", () => setAdvanced(!ui.advanced));
-  el.showMargin?.addEventListener("change", () => {
-    ui.showMargin = !!el.showMargin.checked;
-    renderOptionalModules();
+  // Global error hooks (so you never get “nothing happens” again)
+  window.addEventListener("error", (e) => {
+    const m = e?.message || "Unknown error";
+    log(`ERROR: ${m}`);
+    showAlert(`Error: ${m}`);
   });
-  el.showIncome?.addEventListener("change", () => {
-    ui.showIncome = !!el.showIncome.checked;
-    renderOptionalModules();
-  });
-  el.showIncomeAdv?.addEventListener("change", () => {
-    ui.showIncomeAdv = !!el.showIncomeAdv.checked;
-    renderOptionalModules();
-  });
-  el.showBills?.addEventListener("change", () => {
-    ui.showBills = !!el.showBills.checked;
-    renderOptionalModules();
+  window.addEventListener("unhandledrejection", (e) => {
+    const m = e?.reason?.message || String(e?.reason || "Unhandled rejection");
+    log(`PROMISE: ${m}`);
+    showAlert(`Build failed: ${m}`);
   });
 
-  // Initialize mode UI from storage
-  setAdvanced(ui.advanced);
+  log("Engine loaded.");
 
   // =========================
-  // Income mode UI (target/band rows)
+  // Defaults: date range
   // =========================
-  function syncIncomeModeUI() {
-    const mode = el.incomeMode?.value || "interest_only";
-    if (!el.targetRow || !el.bandRow) return;
-
-    if (mode === "price_band") {
-      el.bandRow.classList.remove("hidden");
-      el.targetRow.classList.add("hidden");
-    } else if (mode === "target_ratio") {
-      el.bandRow.classList.add("hidden");
-      el.targetRow.classList.remove("hidden");
-    } else {
-      el.bandRow.classList.add("hidden");
-      el.targetRow.classList.add("hidden");
-    }
-  }
-  el.incomeMode?.addEventListener("change", syncIncomeModeUI);
-  syncIncomeModeUI();
+  const today = new Date();
+  const end = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  const start = new Date(end.getTime() - 1000 * 60 * 60 * 24 * 365 * 3);
+  if (el.startDate) el.startDate.value = iso(start);
+  if (el.endDate) el.endDate.value = iso(end);
 
   // =========================
-  // Core Assets dynamic rows (up to 10)
+  // Core allocation parsing (from hidden inputs)
   // =========================
-  const CORE_MAX = 10;
-
   function parseCommaList(v) {
     return String(v || "")
       .split(",")
@@ -317,163 +195,29 @@
       .filter(Boolean);
   }
 
-  function createCoreRow(ticker = "", weight = "") {
-    const row = document.createElement("div");
-    row.className = "core-row";
-    row.innerHTML = `
-      <div>
-        <label>Ticker</label>
-        <input class="core-ticker" placeholder="e.g., SPY" value="${String(ticker || "").toUpperCase()}" />
-      </div>
-      <div>
-        <label>Target %</label>
-        <input class="core-weight" type="number" min="0" step="0.01" placeholder="e.g., 50" value="${weight !== "" ? weight : ""}" />
-      </div>
-      <button type="button" class="rm" title="Remove">–</button>
-    `;
+  function getCoreAllocFromHidden() {
+    const tickers = parseCommaList(el.coreTickersHidden?.value || "").map((t) => t.toUpperCase());
+    const weightsRaw = parseCommaList(el.coreWeightsHidden?.value || "").map((x) => Number(x));
 
-    const rm = row.querySelector(".rm");
-    rm.addEventListener("click", () => {
-      row.remove();
-      syncCoreHiddenFields();
-      previewAlloc();
-      syncAddButton();
-    });
-
-    // auto sync on change
-    row.querySelector(".core-ticker").addEventListener("input", () => {
-      syncCoreHiddenFields();
-    });
-    row.querySelector(".core-weight").addEventListener("input", () => {
-      syncCoreHiddenFields();
-    });
-
-    return row;
-  }
-
-  function syncAddButton() {
-    const count = el.coreRows.querySelectorAll(".core-row").length;
-    if (el.addCoreAsset) el.addCoreAsset.disabled = count >= CORE_MAX;
-  }
-
-  function seedCoreRowsFromHidden() {
-    const tickers = parseCommaList(el.coreTickersHidden?.value || "SPY,QQQ").map((t) => t.toUpperCase());
-    const weights = parseCommaList(el.coreWeightsHidden?.value || "50,50").map((w) => Number(w));
-
-    el.coreRows.innerHTML = "";
-
-    // Default to 2 rows minimum for approachability
-    const minRows = Math.max(2, tickers.length || 0);
-
-    for (let i = 0; i < minRows; i++) {
-      const t = tickers[i] || "";
-      const w = isFinite(weights[i]) ? String(weights[i]) : "";
-      el.coreRows.appendChild(createCoreRow(t, w));
-    }
-    syncAddButton();
-    syncCoreHiddenFields();
-  }
-
-  function getCoreAllocFromRows() {
-    const rows = [...el.coreRows.querySelectorAll(".core-row")];
-    const tickers = [];
-    const weights = [];
-
-    for (const r of rows) {
-      const t = String(r.querySelector(".core-ticker")?.value || "").trim().toUpperCase();
-      const w = Number(r.querySelector(".core-weight")?.value || 0);
-
-      if (!t) continue;
-      tickers.push(t);
-      weights.push(isFinite(w) ? w : 0);
-    }
-
-    // De-duplicate tickers (keep first occurrence)
+    // De-duplicate tickers (keep first)
     const seen = new Set();
     const t2 = [];
     const w2 = [];
     for (let i = 0; i < tickers.length; i++) {
       const t = tickers[i];
+      if (!t) continue;
       if (seen.has(t)) continue;
       seen.add(t);
       t2.push(t);
-      w2.push(weights[i]);
+      w2.push(isFinite(weightsRaw[i]) ? weightsRaw[i] : 0);
     }
 
-    // If user left weights blank/zero, equal-weight them for safety
+    if (!t2.length) return { tickers: [], weights: [] };
+
     const sum = w2.reduce((p, c) => p + (isFinite(c) ? c : 0), 0);
-    let wNorm;
-    if (sum <= 0) {
-      wNorm = t2.map(() => (t2.length ? 1 / t2.length : 0));
-    } else {
-      wNorm = normWeights(w2);
-    }
-
+    const wNorm = sum > 0 ? normWeights(w2) : t2.map(() => 1 / t2.length);
     return { tickers: t2, weights: wNorm };
   }
-
-  function syncCoreHiddenFields() {
-    const rows = [...el.coreRows.querySelectorAll(".core-row")];
-    const tickers = [];
-    const weights = [];
-
-    for (const r of rows) {
-      const t = String(r.querySelector(".core-ticker")?.value || "").trim().toUpperCase();
-      const wRaw = r.querySelector(".core-weight")?.value;
-      const w = Number(wRaw);
-
-      if (!t) continue;
-      tickers.push(t);
-      weights.push(isFinite(w) ? w : 0);
-    }
-
-    // Keep hidden comma fields updated (legacy)
-    if (el.coreTickersHidden) el.coreTickersHidden.value = tickers.join(",");
-    if (el.coreWeightsHidden) el.coreWeightsHidden.value = weights.join(",");
-  }
-
-  function previewAlloc() {
-    const alloc = getCoreAllocFromRows();
-    const tickers = alloc.tickers;
-    const weights = alloc.weights;
-
-    if (!el.allocPreview) return;
-    el.allocPreview.innerHTML = "";
-
-    if (!tickers.length) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="3">Add at least one ticker.</td>`;
-      el.allocPreview.appendChild(tr);
-      return;
-    }
-
-    tickers.forEach((t, i) => {
-      const w = weights[i] ?? 0;
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="mono">${t}</td>
-        <td class="mono">${(w * 100).toFixed(2)}%</td>
-        <td>${i === 0 ? "Anchor position" : "Satellite / diversifier"}</td>
-      `;
-      el.allocPreview.appendChild(tr);
-    });
-  }
-
-  el.addCoreAsset?.addEventListener("click", () => {
-    const count = el.coreRows.querySelectorAll(".core-row").length;
-    if (count >= CORE_MAX) return;
-    el.coreRows.appendChild(createCoreRow("", ""));
-    syncAddButton();
-  });
-
-  el.previewAllocBtn?.addEventListener("click", () => {
-    syncCoreHiddenFields();
-    previewAlloc();
-  });
-
-  // init rows + preview
-  seedCoreRowsFromHidden();
-  previewAlloc();
 
   // =========================
   // Worker price fetch
@@ -483,10 +227,10 @@
     if (!t) throw new Error("Missing ticker");
     const url = `${PRICE_PROXY_BASE}/api/prices?ticker=${encodeURIComponent(t)}`;
     const res = await fetch(url, { mode: "cors" });
-    if (!res.ok) throw new Error(`Price fetch failed (${ticker})`);
+    if (!res.ok) throw new Error(`Price fetch failed (${t})`);
     const text = await res.text();
     const rows = parseCsv(text);
-    if (!rows.length) throw new Error(`No data returned (${ticker})`);
+    if (!rows.length) throw new Error(`No data returned (${t})`);
     return rows;
   }
 
@@ -540,7 +284,7 @@
       maps[t] = m;
     });
 
-    // choose shortest history as base (max overlap chance)
+    // Choose shortest history as base
     let base = tickers[0];
     for (const t of tickers) if (seriesByTicker[t].length < seriesByTicker[base].length) base = t;
 
@@ -549,10 +293,7 @@
       const d = r.date;
       let ok = true;
       for (const t of tickers) {
-        if (!maps[t].has(d)) {
-          ok = false;
-          break;
-        }
+        if (!maps[t].has(d)) { ok = false; break; }
       }
       if (ok) dates.push(d);
     }
@@ -577,10 +318,7 @@
         const onejan = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
         const week = Math.floor((((d - onejan) / 86400000) + onejan.getUTCDay() + 1) / 7);
         const key = `${d.getUTCFullYear()}-${week}`;
-        if (key !== lastKey) {
-          buy[i] = true;
-          lastKey = key;
-        }
+        if (key !== lastKey) { buy[i] = true; lastKey = key; }
       }
       return buy;
     }
@@ -589,10 +327,7 @@
     for (let i = 0; i < dates.length; i++) {
       const d = new Date(dates[i] + "T00:00:00Z");
       const key = `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}`;
-      if (key !== lastMonth) {
-        buy[i] = true;
-        lastMonth = key;
-      }
+      if (key !== lastMonth) { buy[i] = true; lastMonth = key; }
     }
     return buy;
   }
@@ -609,17 +344,15 @@
     for (let i = 0; i < dates.length; i++) {
       const d = new Date(dates[i] + "T00:00:00Z");
       const next = i < dates.length - 1 ? new Date(dates[i + 1] + "T00:00:00Z") : null;
-      if (!next) {
-        isMonthEnd[i] = true;
-      } else {
-        const m1 = d.getUTCMonth();
-        const m2 = next.getUTCMonth();
-        if (m1 !== m2) isMonthEnd[i] = true;
-      }
+      if (!next) isMonthEnd[i] = true;
+      else if (d.getUTCMonth() !== next.getUTCMonth()) isMonthEnd[i] = true;
     }
     return isMonthEnd;
   }
 
+  // =========================
+  // Simulation engines
+  // =========================
   function simulateCashOnly(params) {
     const { dates, prices, tickers, weights, startCash, dcaAmt, freq, rebalanceBuys } = params;
     const n = dates.length;
@@ -641,10 +374,7 @@
     function curWeights(i) {
       const v = pv(i);
       const w = {};
-      if (v <= 0) {
-        tickers.forEach((t) => (w[t] = 0));
-        return w;
-      }
+      if (v <= 0) { tickers.forEach((t) => (w[t] = 0)); return w; }
       for (const t of tickers) w[t] = (shares[t] * prices[t][i]) / v;
       return w;
     }
@@ -695,37 +425,14 @@
 
   function simulateMarginWithIncome(params) {
     const {
-      dates,
-      prices,
-      coreTickers,
-      coreWeights,
-      incTickers,
-      incWeights,
-      startCash,
-      dcaAmt,
-      freq,
-      useMargin,
-      marginRateAPR,
-      maxLTV,
-      marginPolicy,
-      dayCount,
+      dates, prices,
+      coreTickers, coreWeights,
+      incTickers, incWeights,
+      startCash, dcaAmt, freq,
+      useMargin, marginRateAPR, maxLTV, marginPolicy, dayCount,
       rebalanceBuys,
-
-      incomeOn,
-      incomeYieldAPR,
-      incomeSplit,
-      incomeMode,
-      adjustFreq,
-      targetRatio,
-      allowTargetBorrow,
-      bandMin,
-      bandMax,
-
-      billsOn,
-      billsMonthly,
-      taxRatePct,
-      billsFallback,
-      taxHandling,
+      incomeOn, incomeYieldAPR, incomeSplit, incomeMode, adjustFreq, targetRatio, allowTargetBorrow, bandMin, bandMax,
+      billsOn, billsMonthly, taxRatePct, billsFallback, taxHandling,
     } = params;
 
     const n = dates.length;
@@ -782,10 +489,7 @@
 
       let sleeveV = 0;
       const curV = {};
-      sleeveTickers.forEach((t) => {
-        curV[t] = valueOf(t, i);
-        sleeveV += curV[t];
-      });
+      sleeveTickers.forEach((t) => { curV[t] = valueOf(t, i); sleeveV += curV[t]; });
       if (sleeveV <= 0) return w;
 
       const curW = {};
@@ -861,10 +565,7 @@
       let dist = 0;
       if (incomeOn && incTickers.length > 0 && monthEnd[i]) {
         dist = incValue(i) * monthlyIncomeRate;
-        if (dist > 0) {
-          cash += dist;
-          ev.dist[i] = dist;
-        }
+        if (dist > 0) { cash += dist; ev.dist[i] = dist; }
       }
 
       if (!monthEnd[i] || dist <= 0) return;
@@ -885,11 +586,7 @@
       const billsNeed = Math.max(0, Number(billsMonthly) || 0);
       if (billsNeed > 0) {
         const pay = Math.min(cash, billsNeed);
-        if (pay > 0) {
-          cash -= pay;
-          ev.bills[i] = pay;
-          billsPaidCum += pay;
-        }
+        if (pay > 0) { cash -= pay; ev.bills[i] = pay; billsPaidCum += pay; }
         const short = billsNeed - pay;
         if (short > 0) ev.billsShort[i] = short;
       }
@@ -1004,17 +701,11 @@
     ctx.strokeStyle = "rgba(255,255,255,0.06)";
     const stepY = h / 7;
     for (let i = 1; i < 7; i++) {
-      ctx.beginPath();
-      ctx.moveTo(0, i * stepY);
-      ctx.lineTo(w, i * stepY);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i * stepY); ctx.lineTo(w, i * stepY); ctx.stroke();
     }
     const stepX = w / 10;
     for (let i = 1; i < 10; i++) {
-      ctx.beginPath();
-      ctx.moveTo(i * stepX, 0);
-      ctx.lineTo(i * stepX, h);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(i * stepX, 0); ctx.lineTo(i * stepX, h); ctx.stroke();
     }
   }
 
@@ -1026,10 +717,7 @@
       if (v < mn) mn = v;
       if (v > mx) mx = v;
     }
-    if (!isFinite(mn) || !isFinite(mx) || mn === mx) {
-      mn = 0;
-      mx = (isFinite(mx) ? mx : 1) || 1;
-    }
+    if (!isFinite(mn) || !isFinite(mx) || mn === mx) { mn = 0; mx = (isFinite(mx) ? mx : 1) || 1; }
     return { mn, mx };
   }
 
@@ -1047,28 +735,17 @@
     ctx.strokeStyle = stroke;
     ctx.globalAlpha = alpha;
 
-    let xFirst = null, yFirst = null;
     let started = false;
-
     ctx.beginPath();
     for (let i = 0; i <= u; i++) {
       const v = arr[i];
       if (!isFinite(v)) { started = false; continue; }
       const x = x0 + (x1 - x0) * (i / (n - 1));
       const y = y1 - (y1 - y0) * ((v - mn) / span);
-      if (xFirst === null) { xFirst = x; yFirst = y; }
       if (!started) { ctx.moveTo(x, y); started = true; }
       else ctx.lineTo(x, y);
     }
     ctx.stroke();
-
-    if (u === 0 && xFirst !== null) {
-      ctx.fillStyle = stroke;
-      ctx.beginPath();
-      ctx.arc(xFirst, yFirst, 3, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
     ctx.globalAlpha = 1;
   }
 
@@ -1077,10 +754,7 @@
     const x = x0 + (x1 - x0) * (i / (n - 1));
     ctx.strokeStyle = "rgba(239,81,34,0.55)";
     ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, pad);
-    ctx.lineTo(x, h - pad);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, h - pad); ctx.stroke();
   }
 
   function drawTimelineTicks(i, w, h, pad) {
@@ -1108,60 +782,33 @@
         const hh = 10 * (ev.dep[k] / maxDep);
         ctx.strokeStyle = "rgba(245,245,245,0.55)";
         ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(x, baseY);
-        ctx.lineTo(x, baseY - hh);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, baseY); ctx.lineTo(x, baseY - hh); ctx.stroke();
       }
       if (ev.buy[k] > 0) {
         const hh = 14 * (ev.buy[k] / maxBuy);
         ctx.strokeStyle = "rgba(239,81,34,0.75)";
         ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(x, baseY - 12);
-        ctx.lineTo(x, baseY - 12 - hh);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, baseY - 12); ctx.lineTo(x, baseY - 12 - hh); ctx.stroke();
       }
       if (ev.dist[k] > 0) {
         const hh = 10 * (ev.dist[k] / maxDist);
         ctx.strokeStyle = "rgba(245,245,245,0.40)";
         ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(x, baseY - 28);
-        ctx.lineTo(x, baseY - 28 - hh);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, baseY - 28); ctx.lineTo(x, baseY - 28 - hh); ctx.stroke();
       }
       if (ev.tax[k] > 0) {
         const hh = 10 * (ev.tax[k] / maxTax);
         ctx.strokeStyle = "rgba(245,245,245,0.22)";
         ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(x, baseY - 40);
-        ctx.lineTo(x, baseY - 40 - hh);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, baseY - 40); ctx.lineTo(x, baseY - 40 - hh); ctx.stroke();
       }
       if (ev.bills[k] > 0) {
         const hh = 10 * (ev.bills[k] / maxBills);
         ctx.strokeStyle = "rgba(245,245,245,0.80)";
         ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(x, baseY - 52);
-        ctx.lineTo(x, baseY - 52 - hh);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, baseY - 52); ctx.lineTo(x, baseY - 52 - hh); ctx.stroke();
       }
     }
-
-    ctx.fillStyle = "rgba(245,245,245,0.55)";
-    ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace";
-    ctx.fillText("Deposit", x0 + 8, topY + 16);
-    ctx.fillStyle = "rgba(239,81,34,0.85)";
-    ctx.fillText("Buy", x0 + 86, topY + 16);
-    ctx.fillStyle = "rgba(245,245,245,0.40)";
-    ctx.fillText("Dist", x0 + 126, topY + 16);
-    ctx.fillStyle = "rgba(245,245,245,0.22)";
-    ctx.fillText("Tax", x0 + 176, topY + 16);
-    ctx.fillStyle = "rgba(245,245,245,0.80)";
-    ctx.fillText("Bills", x0 + 226, topY + 16);
   }
 
   function updateRiskUI(i) {
@@ -1172,18 +819,18 @@
 
     const marginActive = state.meta.useMargin;
     if (!marginActive || maxLTV <= 0) {
-      el.riskGrade.textContent = "OFF";
-      el.riskFill.style.width = "0%";
-      el.riskProx.textContent = "—";
-      el.riskDev.textContent = "—";
-      el.riskSignal.textContent = "Margin disabled";
+      if (el.riskGrade) el.riskGrade.textContent = "OFF";
+      if (el.riskFill) el.riskFill.style.width = "0%";
+      if (el.riskProx) el.riskProx.textContent = "—";
+      if (el.riskDev) el.riskDev.textContent = "—";
+      if (el.riskSignal) el.riskSignal.textContent = "Margin disabled";
       return;
     }
 
     const prox = clamp(ltv / maxLTV, 0, 1.25);
-    el.riskFill.style.width = (clamp(prox, 0, 1) * 100).toFixed(1) + "%";
-    el.riskProx.textContent = (prox * 100).toFixed(1) + "%";
-    el.riskDev.textContent = isFinite(dev) ? (dev >= 0 ? "+" : "") + fmtPct(dev) : "—";
+    if (el.riskFill) el.riskFill.style.width = (clamp(prox, 0, 1) * 100).toFixed(1) + "%";
+    if (el.riskProx) el.riskProx.textContent = (prox * 100).toFixed(1) + "%";
+    if (el.riskDev) el.riskDev.textContent = isFinite(dev) ? (dev >= 0 ? "+" : "") + fmtPct(dev) : "—";
 
     let grade = "LOW";
     let signal = "Healthy buffer";
@@ -1197,17 +844,9 @@
     if (isFinite(cover) && cover >= 1 && prox < 0.95) signal = "Income covers interest";
     if (isFinite(cover) && cover < 1 && prox >= 0.7) signal = "Income does not cover interest";
 
-    el.riskGrade.textContent = grade;
-    el.riskSignal.textContent = signal;
-
-    if (state.calloutsOn) {
-      if (prox >= 0.95 && !state.alerted95) { state.alerted95 = true; showAlert("Risk Alert: LTV is above 95% of max. Buffer is very low."); }
-      else if (prox >= 0.85 && !state.alerted85) { state.alerted85 = true; showAlert("Risk Alert: LTV above 85% of max. You are close to the limit."); }
-      else if (prox >= 0.7 && !state.alerted70) { state.alerted70 = true; showAlert("Risk Alert: LTV above 70% of max. Stress events matter more now."); }
-    }
+    if (el.riskGrade) el.riskGrade.textContent = grade;
+    if (el.riskSignal) el.riskSignal.textContent = signal;
   }
-
-  const ctx2 = el.canvas.getContext("2d");
 
   const state = {
     built: false,
@@ -1217,17 +856,13 @@
     cashSim: null,
     marginSim: null,
     meta: { name: "", useMargin: false, maxLTV: 0 },
-    calloutsOn: true,
-    alerted70: false,
-    alerted85: false,
-    alerted95: false,
   };
 
   function setControlsBuilt(on) {
-    el.play.disabled = !on;
-    el.pause.disabled = !on;
-    el.step.disabled = !on;
-    el.toEnd.disabled = !on;
+    if (el.play) el.play.disabled = !on;
+    if (el.pause) el.pause.disabled = !on;
+    if (el.step) el.step.disabled = !on;
+    if (el.toEnd) el.toEnd.disabled = !on;
   }
 
   function drawFrame(i) {
@@ -1242,7 +877,7 @@
 
     drawGrid(w, h);
 
-    const mode = el.mode.value;
+    const mode = el.mode?.value || "equity";
 
     const rCash = minMax(state.cashSim.equityArr, i);
     const rMar = minMax(state.marginSim.equityArr, i);
@@ -1273,12 +908,12 @@
     const taxRes = state.marginSim.taxReserveArr[i];
     const billsP = state.marginSim.billsPaidArr[i];
 
-    el.kDate.textContent = date;
-    el.kEqCash.textContent = fmtUSD(eqCash);
-    el.kEqMargin.textContent = fmtUSD(eqMar);
-    el.kDebt.textContent = fmtUSD(debt);
-    el.kLTV.textContent = fmtPct(ltv);
-    el.kCover.textContent = isFinite(cover) ? (cover === Infinity ? "∞" : cover.toFixed(2) + "x") : "—";
+    if (el.kDate) el.kDate.textContent = date;
+    if (el.kEqCash) el.kEqCash.textContent = fmtUSD(eqCash);
+    if (el.kEqMargin) el.kEqMargin.textContent = fmtUSD(eqMar);
+    if (el.kDebt) el.kDebt.textContent = fmtUSD(debt);
+    if (el.kLTV) el.kLTV.textContent = fmtPct(ltv);
+    if (el.kCover) el.kCover.textContent = isFinite(cover) ? (cover === Infinity ? "∞" : cover.toFixed(2) + "x") : "—";
     if (el.kTax) el.kTax.textContent = fmtUSD(taxRes);
     if (el.kBills) el.kBills.textContent = fmtUSD(billsP);
 
@@ -1286,18 +921,15 @@
 
     const totalDays = state.cashSim.dates.length;
     const label = state.meta.name || "Simulated Account";
-    el.vizDesc.textContent = `${label} • Day ${i + 1} / ${totalDays}`;
+    if (el.vizDesc) el.vizDesc.textContent = `${label} • Day ${i + 1} / ${totalDays}`;
   }
 
   function tick(ts) {
-    if (!state.playing) {
-      state.lastTs = ts;
-      return;
-    }
+    if (!state.playing) { state.lastTs = ts; return; }
     const dt = (ts - state.lastTs) / 1000;
     state.lastTs = ts;
 
-    const speed = Number(el.speed.value);
+    const speed = Number(el.speed?.value || 60);
     const advance = speed * dt;
 
     const n = state.cashSim.dates.length;
@@ -1363,7 +995,6 @@
     const paydown = ev.paydown || [];
     const borrowAdj = ev.borrowAdj || [];
     const borrowBuy = ev.borrowBuy || [];
-
     const dist = ev.dist || [];
     const tax = ev.tax || [];
     const bills = ev.bills || [];
@@ -1412,51 +1043,47 @@
   async function buildSimulation() {
     el.log.textContent = "Building simulation...\n";
     showAlert(null);
-    state.alerted70 = state.alerted85 = state.alerted95 = false;
 
-    // Ensure core inputs sync
-    syncCoreHiddenFields();
-    previewAlloc();
-
-    const name = (el.name.value || "").trim();
-    const startCash = Math.max(0, Number(el.startCash.value) || 0);
-    const dcaAmt = Math.max(0, Number(el.dcaAmt.value) || 0);
-    const freq = el.freq.value;
-    const startISO = el.startDate.value;
-    const endISO = el.endDate.value;
+    const name = (el.name?.value || "").trim();
+    const startCash = Math.max(0, Number(el.startCash?.value) || 0);
+    const dcaAmt = Math.max(0, Number(el.dcaAmt?.value) || 0);
+    const freq = el.freq?.value || "daily";
+    const startISO = el.startDate?.value;
+    const endISO = el.endDate?.value;
 
     if (!startISO || !endISO || startISO > endISO) {
       log("Invalid date range.");
+      showAlert("Invalid date range.");
       return;
     }
 
-    // Core allocation from rows (approachable + reliable)
-    const coreAlloc = getCoreAllocFromRows();
+    // Core allocation: read from hidden fields (builder maintains these)
+    const coreAlloc = getCoreAllocFromHidden();
     const coreTickers = coreAlloc.tickers;
     const coreW = coreAlloc.weights;
 
     if (!coreTickers.length) {
-      log("Add at least one core ticker.");
+      log("Core tickers are empty. Add at least one core ticker.");
       showAlert("Add at least one core ticker.");
       return;
     }
 
-    // Income only if module is shown + enabled
-    const incomeOn = !!el.incomeOn.checked;
+    // Income (only if enabled)
+    const incomeOn = !!el.incomeOn?.checked;
     const incTickers = incomeOn
-      ? String(el.incomeTickers.value || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean)
+      ? String(el.incomeTickers?.value || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean)
       : [];
-    const incWeightsRaw = incomeOn ? normWeights(String(el.incomeWeights.value || "").split(",").map((s) => s.trim())) : [];
+    const incWeightsRaw = incomeOn ? normWeights(String(el.incomeWeights?.value || "").split(",").map((s) => s.trim())) : [];
 
-    const incomeSplit = clamp(Number(el.incomeSplit.value) || 0, 0, 100);
-    const incomeYieldAPR = Math.max(0, Number(el.incomeYield.value) || 0);
+    const incomeSplit = clamp(Number(el.incomeSplit?.value) || 0, 0, 100);
+    const incomeYieldAPR = Math.max(0, Number(el.incomeYield?.value) || 0);
 
-    // Margin only if module is shown + enabled (and policy not off)
-    const useMargin = !!el.useMargin.checked && el.marginPolicy.value !== "off";
-    const marginRateAPR = Math.max(0, Number(el.marginRate.value) || 0);
-    const maxLTV = clamp((Number(el.maxLTV.value) || 0) / 100, 0, 0.95);
-    const marginPolicy = el.marginPolicy.value;
-    const dayCount = Number(el.dayCount.value) || 365;
+    // Margin
+    const marginPolicy = el.marginPolicy?.value || "assist";
+    const useMargin = !!el.useMargin?.checked && marginPolicy !== "off";
+    const marginRateAPR = Math.max(0, Number(el.marginRate?.value) || 0);
+    const maxLTV = clamp((Number(el.maxLTV?.value) || 0) / 100, 0, 0.95);
+    const dayCount = Number(el.dayCount?.value) || 365;
 
     const incomeMode = el.incomeMode?.value || "interest_only";
     const adjustFreq = el.adjustFreq?.value || "weekly";
@@ -1465,7 +1092,7 @@
     const bandMin = Math.max(0, Number(el.bandMin?.value) || 0);
     const bandMax = Math.max(0, Number(el.bandMax?.value) || 0);
 
-    const rebalanceBuys = !!el.rebalance.checked;
+    const rebalanceBuys = !!el.rebalance?.checked;
 
     const billsOn = !!el.billsOn?.checked;
     const billsMonthly = Math.max(0, Number(el.billsMonthly?.value) || 0);
@@ -1478,9 +1105,9 @@
     const incSum = incWeights.reduce((p, c) => p + c, 0) || 1;
     const incW = incTickers.length ? incWeights.map((x) => x / incSum) : [];
 
-    // Load prices for needed tickers
     const allTickers = [...new Set([...coreTickers, ...incTickers])];
-    log(`Loading prices for ${allTickers.length} tickers...`);
+
+    log(`Loading prices for ${allTickers.length} ticker(s)...`);
     const series = await loadPricesForTickers(allTickers, startISO, endISO);
     const aligned = alignTimeline(series);
 
@@ -1490,7 +1117,7 @@
       return;
     }
 
-    // Guard: aligned.prices keyed by ticker
+    // Keyed by ticker
     const prices = {};
     for (const t of allTickers) {
       const seriesArr = aligned?.prices?.[t];
@@ -1554,31 +1181,32 @@
     state.i = 0;
     state.lastTs = performance.now();
 
-    el.badge.textContent = useMargin ? "SIMULATED (COMPARE + MARGIN)" : "SIMULATED (COMPARE)";
+    if (el.badge) el.badge.textContent = useMargin ? "SIMULATED (COMPARE + MARGIN)" : "SIMULATED (COMPARE)";
     setControlsBuilt(true);
     drawFrame(0);
 
     log(`Built: ${aligned.dates.length} market days.`);
-    log("Tip: Use Play or Step to advance the animation.");
     log(`With margin: ${useMargin ? "ON" : "OFF"} • income: ${incomeOn ? "ON" : "OFF"} • bills/taxes: ${billsOn ? "ON" : "OFF"}.`);
   }
 
-  // Wiring: speed
-  el.speed.addEventListener("input", () => {
+  // =========================
+  // Wiring
+  // =========================
+  if (el.speed && el.speedLabel) {
+    el.speed.addEventListener("input", () => { el.speedLabel.textContent = `${el.speed.value} d/s`; });
     el.speedLabel.textContent = `${el.speed.value} d/s`;
-  });
-  el.speedLabel.textContent = `${el.speed.value} d/s`;
+  }
 
-  // Build
   el.build.addEventListener("click", () => {
-    buildSimulation().catch((e) => {
-      console.error(e);
-      log(`Build failed: ${e?.message || e}`);
-      showAlert(`Build failed: ${e?.message || e}`);
-    });
+    buildSimulation()
+      .then(() => {})
+      .catch((e) => {
+        console.error(e);
+        log(`Build failed: ${e?.message || e}`);
+        showAlert(`Build failed: ${e?.message || e}`);
+      });
   });
 
-  // Reset
   el.reset.addEventListener("click", () => {
     state.built = false;
     state.playing = false;
@@ -1590,31 +1218,30 @@
 
     setControlsBuilt(false);
 
-    el.kDate.textContent = "—";
-    el.kEqCash.textContent = "—";
-    el.kEqMargin.textContent = "—";
-    el.kDebt.textContent = "—";
-    el.kLTV.textContent = "—";
-    el.kCover.textContent = "—";
+    if (el.kDate) el.kDate.textContent = "—";
+    if (el.kEqCash) el.kEqCash.textContent = "—";
+    if (el.kEqMargin) el.kEqMargin.textContent = "—";
+    if (el.kDebt) el.kDebt.textContent = "—";
+    if (el.kLTV) el.kLTV.textContent = "—";
+    if (el.kCover) el.kCover.textContent = "—";
     if (el.kTax) el.kTax.textContent = "—";
     if (el.kBills) el.kBills.textContent = "—";
 
-    el.riskGrade.textContent = "—";
-    el.riskFill.style.width = "0%";
-    el.riskProx.textContent = "—";
-    el.riskDev.textContent = "—";
-    el.riskSignal.textContent = "—";
+    if (el.riskGrade) el.riskGrade.textContent = "—";
+    if (el.riskFill) el.riskFill.style.width = "0%";
+    if (el.riskProx) el.riskProx.textContent = "—";
+    if (el.riskDev) el.riskDev.textContent = "—";
+    if (el.riskSignal) el.riskSignal.textContent = "—";
 
-    el.vizDesc.textContent = "Build a simulation to begin.";
-    el.badge.textContent = "SIMULATED";
+    if (el.vizDesc) el.vizDesc.textContent = "Build a simulation to begin.";
+    if (el.badge) el.badge.textContent = "SIMULATED";
     el.log.textContent = "Ready.";
 
     resizeCanvasToCSS();
-    ctx2.clearRect(0, 0, el.canvas.width, el.canvas.height);
+    ctx.clearRect(0, 0, el.canvas.width, el.canvas.height);
   });
 
-  // Playback controls
-  el.play.addEventListener("click", () => {
+  if (el.play) el.play.addEventListener("click", () => {
     if (!state.built) return;
     const n = state.cashSim.dates.length;
     if (Math.floor(state.i) >= n - 1) state.i = 0;
@@ -1624,13 +1251,13 @@
     requestAnimationFrame(tick);
   });
 
-  el.pause.addEventListener("click", () => {
+  if (el.pause) el.pause.addEventListener("click", () => {
     if (!state.built) return;
     state.playing = false;
     log("Pause.");
   });
 
-  el.step.addEventListener("click", () => {
+  if (el.step) el.step.addEventListener("click", () => {
     if (!state.built) return;
     state.playing = false;
     const n = state.cashSim.dates.length;
@@ -1638,7 +1265,7 @@
     drawFrame(Math.floor(state.i));
   });
 
-  el.toEnd.addEventListener("click", () => {
+  if (el.toEnd) el.toEnd.addEventListener("click", () => {
     if (!state.built) return;
     state.playing = false;
     state.i = state.cashSim.dates.length - 1;
@@ -1646,12 +1273,12 @@
     log("Jumped to end.");
   });
 
-  el.mode.addEventListener("change", () => {
+  if (el.mode) el.mode.addEventListener("change", () => {
     if (state.built) drawFrame(Math.floor(state.i));
   });
 
-  el.dlPng?.addEventListener("click", downloadCanvasPNG);
-  el.dlCsv?.addEventListener("click", downloadSimulationCSV);
+  if (el.dlPng) el.dlPng.addEventListener("click", downloadCanvasPNG);
+  if (el.dlCsv) el.dlCsv.addEventListener("click", downloadSimulationCSV);
 
   window.addEventListener("resize", () => {
     if (state.built) drawFrame(Math.floor(state.i));
