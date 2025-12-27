@@ -795,9 +795,13 @@
     return { mn, mx };
   }
 
+  // PATCH: render a dot at Day 1 so the chart doesn't look empty
   function plotLine(arr, upto, w, h, pad, stroke, range, alpha = 1) {
     const n = arr.length;
     if (!n) return;
+
+    const u = Math.max(0, Math.min(Math.floor(upto), n - 1));
+
     const x0 = pad,
       x1 = w - pad;
     const y0 = pad,
@@ -810,14 +814,39 @@
     ctx.strokeStyle = stroke;
     ctx.globalAlpha = alpha;
 
+    let xFirst = null, yFirst = null;
+    let started = false;
+
     ctx.beginPath();
-    for (let i = 0; i <= upto; i++) {
+    for (let i = 0; i <= u; i++) {
+      const v = arr[i];
+      if (!isFinite(v)) {
+        started = false;
+        continue;
+      }
       const x = x0 + (x1 - x0) * (i / (n - 1));
-      const y = y1 - (y1 - y0) * ((arr[i] - mn) / span);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+      const y = y1 - (y1 - y0) * ((v - mn) / span);
+
+      if (xFirst === null) { xFirst = x; yFirst = y; }
+
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
     }
     ctx.stroke();
+
+    // At Day 1, the line path contains only one point, so it can look "empty".
+    // Render a small dot so users immediately see that data exists.
+    if (u === 0 && xFirst !== null) {
+      ctx.fillStyle = stroke;
+      ctx.beginPath();
+      ctx.arc(xFirst, yFirst, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     ctx.globalAlpha = 1;
   }
 
@@ -1379,7 +1408,12 @@
     drawFrame(0);
 
     log(`Built: ${aligned.dates.length} market days.`);
-    log(`With margin: ${useMargin ? "ON" : "OFF"} • income: ${incomeOn ? "ON" : "OFF"} • bills/taxes: ${billsOn ? "ON" : "OFF"}.`);
+    log("Tip: Use Play or Step to advance the animation (the chart at Day 1 shows a dot, then a line as days progress).");
+    log(
+      `With margin: ${useMargin ? "ON" : "OFF"} • income: ${incomeOn ? "ON" : "OFF"} • bills/taxes: ${
+        billsOn ? "ON" : "OFF"
+      }.`
+    );
   }
 
   // Wiring
