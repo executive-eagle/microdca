@@ -1,10 +1,9 @@
 (() => {
-  // ========= Guard =========
-  if (window.__microdcaSimPortfolioLoaded) return;
-  window.__microdcaSimPortfolioLoaded = true;
+  if (window.__microdcaSimulatedPortfolioLoaded) return;
+  window.__microdcaSimulatedPortfolioLoaded = true;
 
-  // ===================== Utilities =====================
   const $ = (id) => document.getElementById(id);
+
   const fmtUSD = (x) => {
     if (!isFinite(x)) return "—";
     const sign = x < 0 ? "-" : "";
@@ -14,16 +13,19 @@
   const fmtPct = (x) => isFinite(x) ? (x*100).toFixed(2) + "%" : "—";
   const iso = (d) => d.toISOString().slice(0,10);
   const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+
   const normWeights = (arr) => {
     const clean = arr.map(x => Math.max(0, Number(x) || 0));
     const s = clean.reduce((p,c)=>p+c,0);
     if (s <= 0) return clean.map(_=>0);
     return clean.map(x => x / s);
   };
+
   const isMarketDay = (dateObj) => {
     const d = dateObj.getUTCDay();
     return d !== 0 && d !== 6;
   };
+
   const parseCsv = (text) => {
     const lines = text.trim().split(/\r?\n/);
     const out = [];
@@ -38,7 +40,6 @@
     return out;
   };
 
-  // ===================== DOM (expects Webflow markup present) =====================
   const el = {
     name: $("spName"),
     startCash: $("spStartCash"),
@@ -73,6 +74,13 @@
     bandMin: $("spBandMin"),
     bandMax: $("spBandMax"),
 
+    // NEW: Bills + Taxes
+    billsOn: $("spBillsOn"),
+    billsMonthly: $("spBillsMonthly"),
+    taxRate: $("spTaxRate"),
+    billsFallback: $("spBillsFallback"),
+    taxHandling: $("spTaxHandling"),
+
     build: $("spBuild"),
     reset: $("spReset"),
     play: $("spPlay"),
@@ -95,6 +103,8 @@
     kDebt: $("kDebt"),
     kLTV: $("kLTV"),
     kCover: $("kCover"),
+    kTax: $("kTax"),
+    kBills: $("kBills"),
 
     riskGrade: $("riskGrade"),
     riskFill: $("riskFill"),
@@ -102,20 +112,20 @@
     riskDev: $("riskDev"),
     riskSignal: $("riskSignal"),
 
+    dlPng: $("spDlPng"),
+    dlCsv: $("spDlCsv"),
+
     canvas: $("spCanvas")
   };
 
-  // If this page does not contain the widget, exit safely.
   if (!el.canvas || !el.build || !el.reset) return;
 
-  // Default dates (~3 years)
   const today = new Date();
   const end = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
   const start = new Date(end.getTime() - 1000*60*60*24*365*3);
   el.startDate.value = iso(start);
   el.endDate.value = iso(end);
 
-  // ===================== UI helpers =====================
   function syncIncomeModeUI(){
     const mode = el.incomeMode.value;
     if (mode === "price_band"){
@@ -173,10 +183,7 @@
   el.updateAlloc?.addEventListener("click", previewAlloc);
   previewAlloc();
 
-  // ===================== Price loader =====================
   async function fetchDailyCloses(ticker){
-    // Default demo source: Stooq
-    // If you prefer, swap this to your Cloudflare Worker endpoint used by backtesting.
     const t = ticker.toLowerCase();
     const stooqSymbol = t.includes(".") ? t : `${t}.us`;
     const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSymbol)}&i=d`;
@@ -256,7 +263,6 @@
     return { dates, prices, tickers };
   }
 
-  // ===================== Schedules =====================
   function buildBuySchedule(dates, freq){
     const buy = new Array(dates.length).fill(false);
 
@@ -277,7 +283,6 @@
       return buy;
     }
 
-    // monthly
     let lastMonth = null;
     for (let i=0;i<dates.length;i++){
       const d = new Date(dates[i] + "T00:00:00Z");
@@ -294,7 +299,23 @@
     return true;
   }
 
-  // ===================== Simulation: Cash-only baseline =====================
+  // Month-end trigger: last market day of each month
+  function buildMonthEndSchedule(dates){
+    const isMonthEnd = new Array(dates.length).fill(false);
+    for (let i=0;i<dates.length;i++){
+      const d = new Date(dates[i] + "T00:00:00Z");
+      const next = (i < dates.length-1) ? new Date(dates[i+1] + "T00:00:00Z") : null;
+      if (!next){
+        isMonthEnd[i] = true;
+      } else {
+        const m1 = d.getUTCMonth();
+        const m2 = next.getUTCMonth();
+        if (m1 !== m2) isMonthEnd[i] = true;
+      }
+    }
+    return isMonthEnd;
+  }
+
   function simulateCashOnly(params){
     const { dates, prices, tickers, weights, startCash, dcaAmt, freq, rebalanceBuys } = params;
     const n = dates.length;
@@ -352,10 +373,19 @@
       equityArr[i] = pv(i) + cash;
     }
 
-    return { dates, equityArr, debtArr: new Array(n).fill(0), ltvArr: new Array(n).fill(0), coverArr: new Array(n).fill(NaN), targetDevArr: new Array(n).fill(0), events };
+    return {
+      dates,
+      equityArr,
+      debtArr: new Array(n).fill(0),
+      ltvArr: new Array(n).fill(0),
+      coverArr: new Array(n).fill(NaN),
+      targetDevArr: new Array(n).fill(0),
+      taxReserveArr: new Array(n).fill(0),
+      billsPaidArr: new Array(n).fill(0),
+      events
+    };
   }
 
-  // ===================== Simulation: Margin + Income management =====================
   function simulateMarginWithIncome(params){
     const {
       dates, prices,
@@ -364,10 +394,14 @@
       startCash, dcaAmt, freq,
       useMargin, marginRateAPR, maxLTV, marginPolicy, dayCount,
       rebalanceBuys,
+
       incomeOn, incomeYieldAPR, incomeSplit,
       incomeMode, adjustFreq,
       targetRatio, allowTargetBorrow,
-      bandMin, bandMax
+      bandMin, bandMax,
+
+      // Bills/Taxes
+      billsOn, billsMonthly, taxRatePct, billsFallback, taxHandling
     } = params;
 
     const n = dates.length;
@@ -378,26 +412,51 @@
     let cash = startCash;
     let debt = 0;
 
+    // NEW: reserves / tracking
+    let taxReserve = 0;
+    let billsPaidCum = 0;
+
     const equityArr = new Array(n).fill(0);
     const debtArr = new Array(n).fill(0);
     const ltvArr = new Array(n).fill(0);
     const coverArr = new Array(n).fill(NaN);
     const targetDevArr = new Array(n).fill(0);
+    const taxReserveArr = new Array(n).fill(0);
+    const billsPaidArr = new Array(n).fill(0);
 
     const ev = {
       dep: new Array(n).fill(0),
       buy: new Array(n).fill(0),
+
+      // Interest and income
       income: new Array(n).fill(0),
       interest: new Array(n).fill(0),
+
+      // Debt mgmt
       paydown: new Array(n).fill(0),
       borrowAdj: new Array(n).fill(0),
-      borrowBuy: new Array(n).fill(0)
+      borrowBuy: new Array(n).fill(0),
+
+      // NEW: monthly flows
+      dist: new Array(n).fill(0),
+      tax: new Array(n).fill(0),
+      bills: new Array(n).fill(0),
+      billsShort: new Array(n).fill(0)
     };
 
     const buySignal = buildBuySchedule(dates, freq);
+    const monthEnd = buildMonthEndSchedule(dates);
+
     const dailyRate = (marginRateAPR/100) / (Number(dayCount) || 365);
     const dailyIncomeRate = (incomeYieldAPR/100) / (Number(dayCount) || 365);
+
+    // Monthly distribution approximation:
+    // dist_month = incomeSleeveValue * (incomeYieldAPR / 12)
+    // We trigger on the last market day of each month.
+    const monthlyIncomeRate = (incomeYieldAPR/100) / 12;
+
     const split = clamp((Number(incomeSplit) || 0)/100, 0, 1);
+    const taxRate = clamp((Number(taxRatePct) || 0)/100, 0, 0.95);
 
     function valueOf(ticker, i){ return shares[ticker] * prices[ticker][i]; }
     function pv(i){
@@ -410,6 +469,7 @@
       for (const t of incTickers) v += valueOf(t, i);
       return v;
     }
+
     function sleeveWeightsForRebalance(i, sleeveTickers, sleeveWeights){
       let w = sleeveWeights.slice();
       if (!rebalanceBuys) return w;
@@ -426,7 +486,6 @@
       const raw = sleeveTickers.map((t,idx) => Math.max(0, sleeveWeights[idx] - (curW[t] || 0)));
       const sum = raw.reduce((p,c)=>p+c,0);
       if (sum > 0) w = raw.map(x => x/sum);
-
       return w;
     }
 
@@ -489,6 +548,69 @@
       return 0;
     }
 
+    // NEW: month-end distribution + bills/taxes routing
+    function applyMonthEndRouting(i, interestToday){
+      if (!billsOn) return;
+
+      // Generate monthly distribution from income sleeve
+      let dist = 0;
+      if (incomeOn && incTickers.length > 0 && monthEnd[i]){
+        dist = incValue(i) * monthlyIncomeRate;
+        if (dist > 0){
+          cash += dist;
+          ev.dist[i] = dist;
+        }
+      }
+
+      if (!monthEnd[i] || dist <= 0) return;
+
+      // Priority 1: Ensure interest isn't starving (optional: top-up by paying down "new" interest only)
+      // Here: we do NOT auto-pay interest from dist directly because interest is already capitalized daily.
+      // Instead, we allow dist to pay down debt per incomeMode (below). Bills/taxes occur first AFTER taxes calc, per your note.
+      // However you requested order: interest → taxes → bills → principal.
+      // We'll interpret "interest" as: pay down today's accrued interest amount first (reducing debt by that amount).
+      if (useMargin && interestToday > 0){
+        const paidInt = payDownDebt(i, Math.min(cash, interestToday));
+        // (paidInt is included inside ev.paydown)
+      }
+
+      // Priority 2: Taxes (on remaining distribution pool)
+      // Use "remaining distribution pool" as cash increase from dist; we approximate by applying taxes on dist net of interest paydown from cash.
+      // We compute tax on dist (less interest payment if it used dist).
+      let taxBase = dist;
+      const taxAmt = Math.max(0, taxBase * taxRate);
+      const taxPay = Math.min(cash, taxAmt);
+
+      if (taxPay > 0){
+        if (taxHandling === "reserve"){
+          taxReserve += taxPay;
+        }
+        // If taxHandling === "pay", we assume it leaves the system; either way it reduces cash.
+        cash -= taxPay;
+        ev.tax[i] = taxPay;
+      }
+
+      // Priority 3: Bills
+      const billsNeed = Math.max(0, Number(billsMonthly) || 0);
+      if (billsNeed > 0){
+        const pay = Math.min(cash, billsNeed);
+        if (pay > 0){
+          cash -= pay;
+          ev.bills[i] = pay;
+          billsPaidCum += pay;
+        }
+        const short = billsNeed - pay;
+        if (short > 0){
+          if (billsFallback === "cash"){
+            // attempt from any remaining cash (already 0 by definition), so short remains
+            ev.billsShort[i] = short;
+          } else {
+            ev.billsShort[i] = short;
+          }
+        }
+      }
+    }
+
     function marginManagementStep(i, incomeToday, interestToday){
       if (!useMargin || marginPolicy === "off") return;
 
@@ -499,12 +621,14 @@
       if (!incomeOn){ targetDevArr[i] = 0; return; }
 
       if (incomeMode === "interest_only"){
-        payDownDebt(i, Math.min(cash, interestToday));
+        // After bills/taxes, keep debt stable, but allow paying down small amounts via cash if desired:
+        // Here we do NOT auto-pay principal beyond interest paydown in month-end routing.
         targetDevArr[i] = 0;
         return;
       }
 
       if (incomeMode === "interest_plus_principal"){
+        // Allow using excess cash (including distributions left over) to pay down debt progressively.
         payDownDebt(i, cash);
         targetDevArr[i] = 0;
         return;
@@ -516,7 +640,7 @@
       if (!isAdjustDay(i, dates, adjustFreq)) return;
 
       const desiredDebt = Math.max(0, target * v);
-      const delta = desiredDebt - debt; // + => add debt, - => pay down debt
+      const delta = desiredDebt - debt;
 
       if (delta < 0){
         payDownDebt(i, Math.min(cash, Math.abs(delta)));
@@ -526,7 +650,7 @@
     }
 
     for (let i=0;i<n;i++){
-      // Interest accrual
+      // Interest accrual (capitalized into debt)
       let interestToday = 0;
       if (useMargin && debt > 0 && dailyRate > 0){
         interestToday = debt * dailyRate;
@@ -534,15 +658,17 @@
         ev.interest[i] = interestToday;
       }
 
-      // Income generation
+      // Daily income accrual (kept for coverage metric; NOT the “monthly distributions”)
       let incomeToday = 0;
       if (incomeOn && incTickers.length > 0 && dailyIncomeRate > 0){
         incomeToday = incValue(i) * dailyIncomeRate;
-        cash += incomeToday;
         ev.income[i] = incomeToday;
       }
 
-      // Income routing / margin management (before buys)
+      // Month-end: add distributions + route to taxes/bills (and optionally interest)
+      applyMonthEndRouting(i, interestToday);
+
+      // Margin management (post bills/taxes; uses whatever cash remains)
       marginManagementStep(i, incomeToday, interestToday);
 
       // DCA buy day
@@ -550,7 +676,6 @@
         cash += dcaAmt;
         ev.dep[i] = dcaAmt;
 
-        // Borrowing policy during buys
         if (useMargin && marginPolicy === "always"){
           const v = pv(i);
           const desiredDebt = maxLTV * v;
@@ -582,15 +707,17 @@
       debtArr[i] = debt;
       ltvArr[i] = ltv;
 
+      taxReserveArr[i] = taxReserve;
+      billsPaidArr[i] = billsPaidCum;
+
       if (!isFinite(coverArr[i])){
         coverArr[i] = (ev.interest[i] > 0) ? (ev.income[i] / ev.interest[i]) : (ev.income[i] > 0 ? Infinity : NaN);
       }
     }
 
-    return { dates, equityArr, debtArr, ltvArr, coverArr, targetDevArr, events: ev };
+    return { dates, equityArr, debtArr, ltvArr, coverArr, targetDevArr, taxReserveArr, billsPaidArr, events: ev };
   }
 
-  // ===================== Canvas rendering =====================
   const ctx = el.canvas.getContext("2d");
 
   function resizeCanvasToCSS(){
@@ -683,10 +810,9 @@
 
     const maxDep = Math.max(...ev.dep.slice(0,i+1), 1);
     const maxBuy = Math.max(...ev.buy.slice(0,i+1), 1);
-    const maxInc = Math.max(...ev.income.slice(0,i+1), 1);
-    const maxInt = Math.max(...ev.interest.slice(0,i+1), 1);
-    const maxPay = Math.max(...ev.paydown.slice(0,i+1), 1);
-    const maxAdj = Math.max(...ev.borrowAdj.slice(0,i+1), 1);
+    const maxDist = Math.max(...ev.dist.slice(0,i+1), 1);
+    const maxTax = Math.max(...ev.tax.slice(0,i+1), 1);
+    const maxBills = Math.max(...ev.bills.slice(0,i+1), 1);
 
     for (let k=0;k<=i;k++){
       const x = x0 + (x1-x0) * (k/(n-1));
@@ -703,29 +829,23 @@
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(x, baseY-12); ctx.lineTo(x, baseY-12-hh); ctx.stroke();
       }
-      if (ev.income[k] > 0){
-        const hh = 10 * (ev.income[k]/maxInc);
+      if (ev.dist[k] > 0){
+        const hh = 10 * (ev.dist[k]/maxDist);
         ctx.strokeStyle = "rgba(245,245,245,0.40)";
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(x, baseY-28); ctx.lineTo(x, baseY-28-hh); ctx.stroke();
       }
-      if (ev.interest[k] > 0){
-        const hh = 10 * (ev.interest[k]/maxInt);
+      if (ev.tax[k] > 0){
+        const hh = 10 * (ev.tax[k]/maxTax);
         ctx.strokeStyle = "rgba(245,245,245,0.22)";
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.moveTo(x, baseY-40); ctx.lineTo(x, baseY-40-hh); ctx.stroke();
       }
-      if (ev.paydown[k] > 0){
-        const hh = 12 * (ev.paydown[k]/maxPay);
+      if (ev.bills[k] > 0){
+        const hh = 10 * (ev.bills[k]/maxBills);
         ctx.strokeStyle = "rgba(245,245,245,0.80)";
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(x, baseY-52); ctx.lineTo(x, baseY-52-hh); ctx.stroke();
-      }
-      if (ev.borrowAdj[k] > 0){
-        const hh = 12 * (ev.borrowAdj[k]/maxAdj);
-        ctx.strokeStyle = "rgba(239,81,34,0.45)";
-        ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(x, baseY-60); ctx.lineTo(x, baseY-60-hh); ctx.stroke();
       }
     }
 
@@ -735,16 +855,13 @@
     ctx.fillStyle = "rgba(239,81,34,0.85)";
     ctx.fillText("Buy", x0+86, topY+16);
     ctx.fillStyle = "rgba(245,245,245,0.40)";
-    ctx.fillText("Income", x0+126, topY+16);
+    ctx.fillText("Dist", x0+126, topY+16);
     ctx.fillStyle = "rgba(245,245,245,0.22)";
-    ctx.fillText("Interest", x0+196, topY+16);
+    ctx.fillText("Tax", x0+176, topY+16);
     ctx.fillStyle = "rgba(245,245,245,0.80)";
-    ctx.fillText("Paydown", x0+276, topY+16);
-    ctx.fillStyle = "rgba(239,81,34,0.55)";
-    ctx.fillText("Adj", x0+364, topY+16);
+    ctx.fillText("Bills", x0+226, topY+16);
   }
 
-  // ===================== Risk meter =====================
   function updateRiskUI(i){
     const maxLTV = state.meta.maxLTV;
     const ltv = state.marginSim.ltvArr[i];
@@ -799,7 +916,8 @@
     }
   }
 
-  // ===================== State + animation =====================
+  const ctx2 = el.canvas.getContext("2d");
+
   const state = {
     built: false,
     playing: false,
@@ -864,6 +982,8 @@
     const debt   = state.marginSim.debtArr[i];
     const ltv    = state.marginSim.ltvArr[i];
     const cover  = state.marginSim.coverArr[i];
+    const taxRes = state.marginSim.taxReserveArr[i];
+    const billsP = state.marginSim.billsPaidArr[i];
 
     el.kDate.textContent = date;
     el.kEqCash.textContent = fmtUSD(eqCash);
@@ -871,6 +991,8 @@
     el.kDebt.textContent = fmtUSD(debt);
     el.kLTV.textContent = fmtPct(ltv);
     el.kCover.textContent = (isFinite(cover) ? (cover === Infinity ? "∞" : cover.toFixed(2) + "x") : "—");
+    if (el.kTax) el.kTax.textContent = fmtUSD(taxRes);
+    if (el.kBills) el.kBills.textContent = fmtUSD(billsP);
 
     updateRiskUI(i);
 
@@ -900,7 +1022,118 @@
     }
   }
 
-  // ===================== Build =====================
+  function safeFileBase(){
+    const name = (state.meta?.name || "simulated-portfolio").trim() || "simulated-portfolio";
+    const clean = name.replace(/[^a-z0-9\-_]+/gi, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
+    const start = state.cashSim?.dates?.[0] || "";
+    const end = state.cashSim?.dates?.[state.cashSim.dates.length - 1] || "";
+    return `${clean}_${start}_to_${end}`.replace(/__+/g, "_");
+  }
+
+  function downloadBlob(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadCanvasPNG(){
+    if (!state.built) { showAlert("Build a simulation first."); return; }
+    drawFrame(Math.floor(state.i));
+    const filename = `${safeFileBase()}.png`;
+    el.canvas.toBlob((blob) => {
+      if (!blob) { showAlert("PNG export failed."); return; }
+      downloadBlob(blob, filename);
+      log(`Exported PNG: ${filename}`);
+    }, "image/png");
+  }
+
+  function downloadSimulationCSV(){
+    if (!state.built) { showAlert("Build a simulation first."); return; }
+
+    const dates = state.cashSim.dates;
+    const eqCash = state.cashSim.equityArr;
+    const eqMar = state.marginSim.equityArr;
+    const debt = state.marginSim.debtArr;
+    const ltv = state.marginSim.ltvArr;
+    const cover = state.marginSim.coverArr;
+    const taxRes = state.marginSim.taxReserveArr;
+    const billsPaid = state.marginSim.billsPaidArr;
+
+    const ev = state.marginSim.events || {};
+    const dep = ev.dep || [];
+    const buy = ev.buy || [];
+    const income = ev.income || [];
+    const interest = ev.interest || [];
+    const paydown = ev.paydown || [];
+    const borrowAdj = ev.borrowAdj || [];
+    const borrowBuy = ev.borrowBuy || [];
+
+    const dist = ev.dist || [];
+    const tax = ev.tax || [];
+    const bills = ev.bills || [];
+    const billsShort = ev.billsShort || [];
+
+    const header = [
+      "date",
+      "equity_cash_only",
+      "equity_with_margin",
+      "debt",
+      "ltv",
+      "income_coverage",
+      "tax_reserve",
+      "bills_paid_cum",
+      "event_deposit",
+      "event_buy",
+      "event_income_daily",
+      "event_interest",
+      "event_paydown",
+      "event_borrow_adjust",
+      "event_borrow_buy",
+      "event_dist_monthly",
+      "event_tax",
+      "event_bills",
+      "event_bills_short"
+    ].join(",");
+
+    const rows = [header];
+
+    for (let i = 0; i < dates.length; i++){
+      const line = [
+        dates[i],
+        (isFinite(eqCash[i]) ? eqCash[i] : ""),
+        (isFinite(eqMar[i]) ? eqMar[i] : ""),
+        (isFinite(debt[i]) ? debt[i] : ""),
+        (isFinite(ltv[i]) ? ltv[i] : ""),
+        (cover[i] === Infinity ? "Infinity" : (isFinite(cover[i]) ? cover[i] : "")),
+        (isFinite(taxRes[i]) ? taxRes[i] : ""),
+        (isFinite(billsPaid[i]) ? billsPaid[i] : ""),
+        (isFinite(dep[i]) ? dep[i] : 0),
+        (isFinite(buy[i]) ? buy[i] : 0),
+        (isFinite(income[i]) ? income[i] : 0),
+        (isFinite(interest[i]) ? interest[i] : 0),
+        (isFinite(paydown[i]) ? paydown[i] : 0),
+        (isFinite(borrowAdj[i]) ? borrowAdj[i] : 0),
+        (isFinite(borrowBuy[i]) ? borrowBuy[i] : 0),
+        (isFinite(dist[i]) ? dist[i] : 0),
+        (isFinite(tax[i]) ? tax[i] : 0),
+        (isFinite(bills[i]) ? bills[i] : 0),
+        (isFinite(billsShort[i]) ? billsShort[i] : 0)
+      ].join(",");
+      rows.push(line);
+    }
+
+    const csv = rows.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const filename = `${safeFileBase()}.csv`;
+    downloadBlob(blob, filename);
+    log(`Exported CSV: ${filename}`);
+  }
+
   async function buildSimulation(){
     el.log.textContent = "Building simulation...\n";
     showAlert(null);
@@ -941,6 +1174,13 @@
 
     const rebalanceBuys = !!el.rebalance.checked;
 
+    // Bills & Taxes inputs
+    const billsOn = !!el.billsOn?.checked;
+    const billsMonthly = Math.max(0, Number(el.billsMonthly?.value) || 0);
+    const taxRatePct = clamp(Number(el.taxRate?.value) || 0, 0, 80);
+    const billsFallback = el.billsFallback?.value || "cash";
+    const taxHandling = el.taxHandling?.value || "reserve";
+
     previewAlloc();
 
     const allTickers = [...new Set([...coreTickers, ...incTickers])];
@@ -952,16 +1192,13 @@
       return;
     }
 
-    // prices map
     const prices = {};
     aligned.tickers.forEach(t => { prices[t] = aligned.prices[t]; });
 
-    // normalize core weights
     const coreWeights = coreTickers.map((_,i) => coreWeightsRaw[i] ?? (1/coreTickers.length));
     const coreSum = coreWeights.reduce((p,c)=>p+c,0) || 1;
     const coreW = coreWeights.map(x => x/coreSum);
 
-    // normalize income weights
     const incWeights = incTickers.map((_,i) => incWeightsRaw[i] ?? (incTickers.length ? 1/incTickers.length : 0));
     const incSum = incWeights.reduce((p,c)=>p+c,0) || 1;
     const incW = incTickers.length ? incWeights.map(x => x/incSum) : [];
@@ -996,7 +1233,13 @@
       adjustFreq,
       targetRatio,
       allowTargetBorrow,
-      bandMin, bandMax
+      bandMin, bandMax,
+
+      billsOn,
+      billsMonthly,
+      taxRatePct,
+      billsFallback,
+      taxHandling
     });
 
     state.cashSim = cashSim;
@@ -1012,11 +1255,10 @@
     drawFrame(0);
 
     log(`Built: ${aligned.dates.length} market days.`);
-    log(`Cash-only: core sleeve only.`);
-    log(`With margin: ${useMargin ? "ON" : "OFF"} • income engine: ${incomeOn ? "ON" : "OFF"} • mode: ${incomeMode}.`);
+    log(`With margin: ${useMargin ? "ON" : "OFF"} • income: ${incomeOn ? "ON" : "OFF"} • bills/taxes: ${billsOn ? "ON" : "OFF"}.`);
   }
 
-  // ===================== Wiring =====================
+  // Wiring
   el.speed.addEventListener("input", () => { el.speedLabel.textContent = `${el.speed.value} d/s`; });
   el.speedLabel.textContent = `${el.speed.value} d/s`;
 
@@ -1041,6 +1283,8 @@
     el.kDebt.textContent = "—";
     el.kLTV.textContent = "—";
     el.kCover.textContent = "—";
+    if (el.kTax) el.kTax.textContent = "—";
+    if (el.kBills) el.kBills.textContent = "—";
 
     el.riskGrade.textContent = "—";
     el.riskFill.style.width = "0%";
@@ -1053,7 +1297,7 @@
     el.log.textContent = "Ready.";
 
     resizeCanvasToCSS();
-    ctx.clearRect(0,0,el.canvas.width, el.canvas.height);
+    ctx2.clearRect(0,0,el.canvas.width, el.canvas.height);
   });
 
   el.play.addEventListener("click", () => {
@@ -1089,6 +1333,9 @@
   });
 
   el.mode.addEventListener("change", () => { if (state.built) drawFrame(Math.floor(state.i)); });
+
+  el.dlPng?.addEventListener("click", downloadCanvasPNG);
+  el.dlCsv?.addEventListener("click", downloadSimulationCSV);
 
   window.addEventListener("resize", () => { if (state.built) drawFrame(Math.floor(state.i)); });
   resizeCanvasToCSS();
