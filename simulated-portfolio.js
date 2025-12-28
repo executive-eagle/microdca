@@ -1,8 +1,5 @@
 (() => {
-  // =========================
-  // HARD SINGLETON GUARD
-  // =========================
-  const VERSION = "sim-portfolio v3.3 (animated play + overlay prompt)";
+  const VERSION = "sim-portfolio v3.4 (beginner/advanced toggle + block stubs)";
   if (window.__MICRODCA_SIM_PORTFOLIO_SINGLETON__) {
     console.warn("[MicroDCA Simulator] Duplicate load blocked:", VERSION);
     return;
@@ -14,7 +11,9 @@
 
   const $ = (id) => document.getElementById(id);
 
+  // --- Core elements (existing) ---
   const el = {
+    // existing controls
     name: $("spName"),
     startCash: $("spStartCash"),
     dcaAmt: $("spDcaAmt"),
@@ -37,10 +36,10 @@
     pause: $("spPause"),
     step: $("spStep"),
     toEnd: $("spToEnd"),
+
     dlPng: $("spDlPng"),
     dlCsv: $("spDlCsv"),
 
-    badge: $("spBadge"),
     vizDesc: $("spVizDesc"),
     canvas: $("spCanvas"),
     chartFrame: $("spChartFrame"),
@@ -59,6 +58,25 @@
     speed: $("spSpeed"),
     speedLabel: $("spSpeedLabel"),
     mode: $("spMode"),
+
+    // --- new: mode toggle + advanced blocks ---
+    modeDesc: $("spModeDesc"),
+    modeBeginnerBtn: $("spModeBeginner"),
+    modeAdvancedBtn: $("spModeAdvanced"),
+    advancedWrap: $("spAdvancedWrap"),
+
+    // advanced inputs
+    taxRate: $("spTaxRate"),
+    taxReserveMode: $("spTaxReserveMode"),
+    billsMonthly: $("spBillsMonthly"),
+
+    incomeApr: $("spIncomeApr"),
+    incomeFreq: $("spIncomeFreq"),
+    incomeReinvestPct: $("spIncomeReinvestPct"),
+
+    marginEnabled: $("spMarginEnabled"),
+    marginMaxLTV: $("spMarginMaxLTV"),
+    marginApr: $("spMarginApr"),
   };
 
   if (!el.canvas || !el.chartFrame || !el.build || !el.rowsWrap) {
@@ -106,58 +124,75 @@
   }
 
   // -------------------------
-  // "PRESS PLAY" OVERLAY (pure JS, no HTML changes needed)
+  // Beginner / Advanced mode
   // -------------------------
-  const overlay = (() => {
-    const wrap = el.chartFrame;
-    if (!wrap) return null;
+  const MODE_KEY = "microdca.simulator.mode"; // "beginner" | "advanced"
+  function getSavedMode() {
+    const v = (localStorage.getItem(MODE_KEY) || "").toLowerCase();
+    return v === "advanced" ? "advanced" : "beginner";
+  }
+  function saveMode(mode) {
+    localStorage.setItem(MODE_KEY, mode);
+  }
 
-    // ensure positioning works
-    const cs = getComputedStyle(wrap);
-    if (cs.position === "static") wrap.style.position = "relative";
+  function setMode(mode) {
+    const isAdvanced = mode === "advanced";
 
-    const o = document.createElement("div");
-    o.id = "spPlayOverlay";
-    o.style.position = "absolute";
-    o.style.inset = "0";
-    o.style.display = "none";
-    o.style.alignItems = "center";
-    o.style.justifyContent = "center";
-    o.style.pointerEvents = "none";
-    o.style.background = "linear-gradient(180deg, rgba(0,0,0,0.10), rgba(0,0,0,0.22))";
-    o.style.backdropFilter = "blur(1px)";
-    o.style.borderRadius = "12px";
+    if (el.modeBeginnerBtn) el.modeBeginnerBtn.setAttribute("aria-pressed", String(!isAdvanced));
+    if (el.modeAdvancedBtn) el.modeAdvancedBtn.setAttribute("aria-pressed", String(isAdvanced));
 
-    o.innerHTML = `
-      <div style="
-        display:flex; flex-direction:column; gap:10px;
-        align-items:center; justify-content:center;
-        padding:14px 18px;
-        border:1px solid rgba(255,255,255,0.10);
-        background:rgba(0,0,0,0.55);
-        border-radius:14px;
-        box-shadow:0 14px 40px rgba(0,0,0,0.55);
-        text-align:center;
-        max-width:360px;
-      ">
-        <div style="font-weight:700; letter-spacing:.02em;">Press Play to animate</div>
-        <div style="color:rgba(245,245,245,0.70); font-size:12px; line-height:1.35;">
-          The gray curve shows the full backtest. Play draws the simulation forward day-by-day.
-        </div>
-      </div>
-    `;
+    if (el.advancedWrap) {
+      el.advancedWrap.classList.toggle("sim-hidden", !isAdvanced);
+    }
 
-    wrap.appendChild(o);
-    return o;
-  })();
+    if (el.modeDesc) {
+      el.modeDesc.textContent = isAdvanced
+        ? "Advanced mode enables taxes, income, and margin inputs."
+        : "Beginner mode hides taxes, income, and margin inputs.";
+    }
 
-  function showOverlay(on) {
-    if (!overlay) return;
-    overlay.style.display = on ? "flex" : "none";
+    saveMode(mode);
+    log(`Mode set: ${mode}`);
+  }
+
+  if (el.modeBeginnerBtn) el.modeBeginnerBtn.addEventListener("click", () => setMode("beginner"));
+  if (el.modeAdvancedBtn) el.modeAdvancedBtn.addEventListener("click", () => setMode("advanced"));
+
+  function readAdvancedInputs() {
+    // Stubs: values are read and validated so you can wire the math next without changing UI again.
+    const mode = getSavedMode();
+    const isAdvanced = mode === "advanced";
+
+    const out = {
+      isAdvanced,
+
+      taxes: {
+        enabled: isAdvanced && (el.taxReserveMode?.value === "on"),
+        effectiveRate: Math.max(0, Math.min(60, Number(el.taxRate?.value || 0))) / 100,
+      },
+
+      bills: {
+        monthly: Math.max(0, Number(el.billsMonthly?.value || 0)),
+      },
+
+      income: {
+        apr: Math.max(0, Number(el.incomeApr?.value || 0)) / 100,
+        freq: el.incomeFreq?.value || "monthly",
+        reinvestPct: Math.max(0, Math.min(100, Number(el.incomeReinvestPct?.value || 0))) / 100,
+      },
+
+      margin: {
+        enabled: isAdvanced && (el.marginEnabled?.value === "on"),
+        maxLTV: Math.max(0, Math.min(60, Number(el.marginMaxLTV?.value || 0))) / 100,
+        apr: Math.max(0, Number(el.marginApr?.value || 0)) / 100,
+      },
+    };
+
+    return out;
   }
 
   // -------------------------
-  // Asset builder
+  // Asset builder (unchanged)
   // -------------------------
   const MAX_ASSETS = 10;
 
@@ -177,9 +212,11 @@
       btn.style.cursor = btn.disabled ? "not-allowed" : "pointer";
     });
 
-    el.addAsset.disabled = rowEls.length >= MAX_ASSETS;
-    el.addAsset.style.opacity = el.addAsset.disabled ? "0.45" : "1";
-    el.addAsset.style.cursor = el.addAsset.disabled ? "not-allowed" : "pointer";
+    if (el.addAsset) {
+      el.addAsset.disabled = rowEls.length >= MAX_ASSETS;
+      el.addAsset.style.opacity = el.addAsset.disabled ? "0.45" : "1";
+      el.addAsset.style.cursor = el.addAsset.disabled ? "not-allowed" : "pointer";
+    }
   }
 
   function writeLegacyFromRows() {
@@ -206,14 +243,16 @@
       dw.push(weights[i] ?? 0);
     }
 
-    el.legacyTickers.value = dt.join(",");
-    el.legacyWeights.value = dw.join(",");
+    if (el.legacyTickers) el.legacyTickers.value = dt.join(",");
+    if (el.legacyWeights) el.legacyWeights.value = dw.join(",");
 
     const sum = dw.reduce((p, c) => p + c, 0);
-    el.totalEl.textContent = isFinite(sum) ? sum.toFixed(0) : "—";
+    if (el.totalEl) el.totalEl.textContent = isFinite(sum) ? sum.toFixed(0) : "—";
   }
 
   function previewAlloc() {
+    if (!el.allocPreview) return;
+
     const tickers = (el.legacyTickers.value || "").split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
     const weightsRaw = (el.legacyWeights.value || "").split(",").map(s => Number(String(s).trim()));
     const wNorm = normWeights(weightsRaw);
@@ -279,7 +318,7 @@
     previewAlloc();
   }
 
-  el.addAsset.addEventListener("click", () => {
+  if (el.addAsset) el.addAsset.addEventListener("click", () => {
     const count = el.rowsWrap.querySelectorAll(".asset-row").length;
     if (count >= MAX_ASSETS) return;
     el.rowsWrap.appendChild(makeRow("", ""));
@@ -288,13 +327,13 @@
     previewAlloc();
   });
 
-  el.updateAlloc.addEventListener("click", () => {
+  if (el.updateAlloc) el.updateAlloc.addEventListener("click", () => {
     writeLegacyFromRows();
     previewAlloc();
   });
 
   // -------------------------
-  // Prices (with timeout)
+  // Prices (minimal)
   // -------------------------
   function parseCsv(text) {
     const lines = text.trim().split(/\r?\n/);
@@ -398,7 +437,7 @@
   }
 
   // -------------------------
-  // Simulation
+  // Simulation (beginner-only for now)
   // -------------------------
   function buildBuySchedule(dates, freq) {
     const buy = new Array(dates.length).fill(false);
@@ -488,7 +527,7 @@
   }
 
   // -------------------------
-  // Canvas rendering
+  // Rendering (full-history baseline + orange progress)
   // -------------------------
   const ctx = el.canvas.getContext("2d");
 
@@ -499,7 +538,7 @@
     const h = Math.max(1, Math.round(rect.height * dpr));
     el.canvas.width = w;
     el.canvas.height = h;
-    return { w, h, dpr };
+    return { w, h };
   }
 
   function clearAll(w, h) {
@@ -511,13 +550,9 @@
     ctx.lineWidth = 1;
     ctx.strokeStyle = "rgba(255,255,255,0.06)";
     const stepY = h / 7;
-    for (let i = 1; i < 7; i++) {
-      ctx.beginPath(); ctx.moveTo(0, i * stepY); ctx.lineTo(w, i * stepY); ctx.stroke();
-    }
+    for (let i = 1; i < 7; i++) { ctx.beginPath(); ctx.moveTo(0, i * stepY); ctx.lineTo(w, i * stepY); ctx.stroke(); }
     const stepX = w / 10;
-    for (let i = 1; i < 10; i++) {
-      ctx.beginPath(); ctx.moveTo(i * stepX, 0); ctx.lineTo(i * stepX, h); ctx.stroke();
-    }
+    for (let i = 1; i < 10; i++) { ctx.beginPath(); ctx.moveTo(i * stepX, 0); ctx.lineTo(i * stepX, h); ctx.stroke(); }
   }
 
   function minMaxAll(arr) {
@@ -539,7 +574,6 @@
 
     const x0 = pad, x1 = w - pad;
     const y0 = pad, y1 = h - pad;
-
     const mn = range.mn, mx = range.mx;
     const span = (mx - mn) || 1;
 
@@ -578,7 +612,7 @@
   }
 
   // -------------------------
-  // State + playback
+  // Playback
   // -------------------------
   const state = {
     built: false,
@@ -587,9 +621,6 @@
     lastTs: 0,
     sim: null,
     meta: { name: "" },
-
-    // animation feel: easing the visible "draw" of the orange line
-    // (we draw to state.i, but we move state.i smoothly)
     easing: 0.18,
   };
 
@@ -610,18 +641,11 @@
     const pad = Math.round(Math.min(w, h) * 0.05);
     const mode = el.mode.value;
     const n = state.sim.dates.length;
-
     const rEq = minMaxAll(state.sim.equityArr);
 
     if (mode === "equity") {
-      // full-history baseline (always visible)
       plotFull(state.sim.equityArr, w, h, pad, "rgba(245,245,245,0.22)", rEq, 1);
-      // animated progress
       plotLine(state.sim.equityArr, i, w, h, pad, "rgba(239,81,34,0.95)", rEq, 1);
-    } else if (mode === "debt") {
-      const rD = minMaxAll(state.sim.debtArr);
-      plotFull(state.sim.debtArr, w, h, pad, "rgba(245,245,245,0.22)", rD, 1);
-      plotLine(state.sim.debtArr, i, w, h, pad, "rgba(245,245,245,0.85)", rD, 1);
     } else {
       plotFull(state.sim.equityArr, w, h, pad, "rgba(245,245,245,0.22)", rEq, 1);
       plotLine(state.sim.equityArr, i, w, h, pad, "rgba(239,81,34,0.95)", rEq, 1);
@@ -630,14 +654,10 @@
     drawCursor(i, w, h, pad, n);
 
     const ii = Math.max(0, Math.min(Math.floor(i), n - 1));
-    const date = state.sim.dates[ii] || "—";
-    const eq = state.sim.equityArr[ii];
-    const debt = state.sim.debtArr[ii];
-
-    el.kDate.textContent = date;
-    el.kEqCash.textContent = fmtUSD(eq);
-    el.kEqMargin.textContent = fmtUSD(eq);
-    el.kDebt.textContent = fmtUSD(debt);
+    el.kDate.textContent = state.sim.dates[ii] || "—";
+    el.kEqCash.textContent = fmtUSD(state.sim.equityArr[ii]);
+    el.kEqMargin.textContent = fmtUSD(state.sim.equityArr[ii]);
+    el.kDebt.textContent = fmtUSD(state.sim.debtArr[ii]);
     el.kLTV.textContent = fmtPct(state.sim.ltvArr[ii]);
     el.kCover.textContent = "—";
     el.kTax.textContent = fmtUSD(state.sim.taxReserveArr[ii]);
@@ -652,13 +672,13 @@
     const dt = (ts - state.lastTs) / 1000;
     state.lastTs = ts;
 
-    const speed = Number(el.speed.value); // days per second
+    const speed = Number(el.speed.value);
     const rawAdvance = speed * dt;
 
     const n = state.sim.dates.length;
     const target = Math.min(n - 1, state.i + rawAdvance);
 
-    // ease the animation so the orange line "draws" smoothly
+    // smooth draw effect
     state.i = state.i + (target - state.i) * (1 - Math.pow(1 - state.easing, 60 * dt));
 
     drawFrame(state.i);
@@ -666,7 +686,6 @@
     if (Math.floor(state.i) >= n - 1) {
       state.playing = false;
       log("Reached end of simulation.");
-      showOverlay(false);
     } else {
       requestAnimationFrame(tick);
     }
@@ -679,6 +698,12 @@
     el.log.textContent = "";
     log(`Loaded ${VERSION}`);
     log(`Worker base: ${PRICE_PROXY_BASE}`);
+
+    // read advanced settings (does not change math yet)
+    const adv = readAdvancedInputs();
+    if (adv.isAdvanced) {
+      log("Advanced inputs enabled (taxes/income/margin). Simulation math currently uses beginner engine.");
+    }
 
     writeLegacyFromRows();
     previewAlloc();
@@ -706,97 +731,10 @@
     if (sum <= 0) weights = tickers.map(() => 1 / tickers.length);
 
     log(`Loading prices for ${tickers.length} tickers... (${tickers.join(", ")})`);
-    const series = await (async () => {
-      const s = {};
-      for (const t of tickers) {
-        try {
-          log(`Loading price history for ${t}...`);
-          const rows = await (async () => {
-            const url = `${PRICE_PROXY_BASE}/api/prices?ticker=${encodeURIComponent(t)}`;
-            const ctrl = new AbortController();
-            const timeout = setTimeout(() => ctrl.abort(), 12000);
-            try {
-              const res = await fetch(url, { mode: "cors", signal: ctrl.signal });
-              if (!res.ok) throw new Error(`Worker fetch failed (${res.status})`);
-              const text = await res.text();
-              const parsed = (() => {
-                const lines = text.trim().split(/\r?\n/);
-                const out = [];
-                for (let i = 1; i < lines.length; i++) {
-                  const parts = lines[i].split(",");
-                  if (parts.length < 5) continue;
-                  const date = parts[0];
-                  const close = Number(parts[4]);
-                  if (!date || !isFinite(close)) continue;
-                  out.push({ date, close });
-                }
-                return out;
-              })();
-              if (!parsed.length) throw new Error("No data returned");
-              return parsed;
-            } finally {
-              clearTimeout(timeout);
-            }
-          })();
-
-          const filtered = rows.filter((r) => r.date >= startISO && r.date <= endISO && isFinite(r.close));
-          if (filtered.length < 30) throw new Error("Too few rows in range");
-          s[t] = filtered;
-          log(`Loaded ${filtered.length} rows for ${t}.`);
-        } catch (e) {
-          log(`Fetch failed for ${t} (${e?.name === "AbortError" ? "timeout" : (e?.message || "error")}). Using synthetic series.`);
-          s[t] = (function syntheticPrices(ticker, a, b) {
-            let seed = 0;
-            for (let i = 0; i < ticker.length; i++) seed = (seed * 31 + ticker.charCodeAt(i)) >>> 0;
-            const rand = () => ((seed = (1664525 * seed + 1013904223) >>> 0) / 4294967296);
-
-            const start = new Date(a + "T00:00:00Z");
-            const end = new Date(b + "T00:00:00Z");
-            const out = [];
-            let px = 60 + rand() * 180;
-
-            for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-              if (!isMarketDay(d)) continue;
-              const drift = 0.00025;
-              const vol = 0.012;
-              const shock = (rand() * 2 - 1) * vol;
-              px = Math.max(1, px * (1 + drift + shock));
-              out.push({ date: iso(d), close: px });
-            }
-            return out;
-          })(t, startISO, endISO);
-        }
-      }
-      return s;
-    })();
+    const series = await loadPricesForTickers(tickers, startISO, endISO);
 
     log("Aligning timelines...");
-    const aligned = (function alignTimeline(seriesByTicker) {
-      const tickers = Object.keys(seriesByTicker);
-      const maps = {};
-      tickers.forEach((t) => {
-        const m = new Map();
-        seriesByTicker[t].forEach((r) => m.set(r.date, r.close));
-        maps[t] = m;
-      });
-
-      let base = tickers[0];
-      for (const t of tickers) if (seriesByTicker[t].length < seriesByTicker[base].length) base = t;
-
-      const dates = [];
-      for (const r of seriesByTicker[base]) {
-        const d = r.date;
-        let ok = true;
-        for (const t of tickers) {
-          if (!maps[t].has(d)) { ok = false; break; }
-        }
-        if (ok) dates.push(d);
-      }
-
-      const prices = {};
-      tickers.forEach((t) => (prices[t] = dates.map((d) => maps[t].get(d))));
-      return { dates, prices, tickers };
-    })(series);
+    const aligned = alignTimeline(series);
 
     if (aligned.dates.length < 40) {
       showAlert("Not enough overlapping history. Try wider dates or fewer tickers.");
@@ -829,9 +767,6 @@
     setControlsBuilt(true);
     drawFrame(0);
 
-    // Show overlay prompt after build; hide it on Play.
-    showOverlay(true);
-
     log(`Simulation built successfully (${aligned.dates.length} market days).`);
   }
 
@@ -853,7 +788,6 @@
     state.playing = true;
     state.lastTs = performance.now();
     log("Play.");
-    showOverlay(false);
     requestAnimationFrame(tick);
   });
 
@@ -861,14 +795,11 @@
     if (!state.built) return;
     state.playing = false;
     log("Pause.");
-    // if paused early, overlay can remind user
-    if (Math.floor(state.i) < state.sim.dates.length - 1) showOverlay(true);
   });
 
   el.step.addEventListener("click", () => {
     if (!state.built) return;
     state.playing = false;
-    showOverlay(false);
     const n = state.sim.dates.length;
     state.i = Math.min(n - 1, Math.floor(state.i) + 1);
     drawFrame(state.i);
@@ -877,7 +808,6 @@
   el.toEnd.addEventListener("click", () => {
     if (!state.built) return;
     state.playing = false;
-    showOverlay(false);
     state.i = state.sim.dates.length - 1;
     drawFrame(state.i);
     log("Jumped to end.");
@@ -907,10 +837,12 @@
   if (el.startDate && !el.startDate.value) el.startDate.value = iso(start);
   if (el.endDate && !el.endDate.value) el.endDate.value = iso(end);
 
-  // Initial UI state
+  // Init UI
   initBuilder();
   setControlsBuilt(false);
-  showOverlay(false);
+
+  // Apply saved mode on load
+  setMode(getSavedMode());
 
   const { w, h } = resizeCanvas();
   clearAll(w, h);
