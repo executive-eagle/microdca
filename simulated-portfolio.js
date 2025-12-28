@@ -1,221 +1,169 @@
-/* ===========================================================================================
-   MICRODCA Simulated Portfolio Engine (External)
-   - Beginner/Advanced toggle + per-card show/hide works
-   - Core asset builder writes to hidden legacy inputs
-   - Simulation runs end-to-end (no “Building simulation…” hang)
-   - Worker price fetch with multi-endpoint probing + synthetic fallback
-   =========================================================================================== */
 (() => {
-  if (window.__microdcaSimPortfolioLoaded) return;
-  window.__microdcaSimPortfolioLoaded = true;
+  if (window.__microdcaSimPortfolioFixedLoaded) return;
+  window.__microdcaSimPortfolioFixedLoaded = true;
+
+  const PRICE_PROXY_BASE = (window.MICRODCA_PRICE_PROXY_BASE || "https://simulated-portfolio.microdca.com")
+    .replace(/\/+$/, "");
 
   const $ = (id) => document.getElementById(id);
 
-  // -------------------------
-  // Utilities
-  // -------------------------
-  const pad2 = (n) => String(n).padStart(2, "0");
-  const toISO = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-  const parseISO = (s) => {
-    const [y, m, d] = String(s || "").split("-").map(Number);
-    if (!y || !m || !d) return null;
-    const dt = new Date(y, m - 1, d);
-    dt.setHours(0, 0, 0, 0);
-    return dt;
+  const el = {
+    name: $("spName"),
+    startCash: $("spStartCash"),
+    dcaAmt: $("spDcaAmt"),
+    freq: $("spFreq"),
+    startDate: $("spStartDate"),
+    endDate: $("spEndDate"),
+    rebalance: $("spRebalance"),
+
+    rowsWrap: $("spAssetRows"),
+    addAsset: $("spAddAsset"),
+    updateAlloc: $("spUpdateAlloc"),
+    totalEl: $("spWeightTotal"),
+    legacyTickers: $("spTickers"),
+    legacyWeights: $("spWeights"),
+    allocPreview: $("spAllocPreview"),
+
+    build: $("spBuild"),
+    reset: $("spReset"),
+    play: $("spPlay"),
+    pause: $("spPause"),
+    step: $("spStep"),
+    toEnd: $("spToEnd"),
+    dlPng: $("spDlPng"),
+    dlCsv: $("spDlCsv"),
+
+    badge: $("spBadge"),
+    vizDesc: $("spVizDesc"),
+    canvas: $("spCanvas"),
+    chartFrame: $("spChartFrame"),
+    log: $("spLog"),
+    alert: $("spAlert"),
+
+    kDate: $("kDate"),
+    kEqCash: $("kEqCash"),
+    kEqMargin: $("kEqMargin"),
+    kDebt: $("kDebt"),
+    kLTV: $("kLTV"),
+    kCover: $("kCover"),
+    kTax: $("kTax"),
+    kBills: $("kBills"),
+
+    speed: $("spSpeed"),
+    speedLabel: $("spSpeedLabel"),
+    mode: $("spMode"),
   };
-  const fmtUSD = (x) => (isFinite(x) ? x.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 }) : "—");
+
+  if (!el.canvas || !el.chartFrame || !el.build) return;
 
   // -------------------------
-  // DOM guards
+  // Helpers
   // -------------------------
-  const root = $("simPortfolio");
-  if (!root) return;
-
-  // -------------------------
-  // Log + alert
-  // -------------------------
-  const logEl = $("spLog");
-  const alertEl = $("spAlert");
-  const vizDesc = $("spVizDesc");
+  const fmtUSD = (x) => {
+    if (!isFinite(x)) return "—";
+    const sign = x < 0 ? "-" : "";
+    const v = Math.abs(x);
+    return sign + v.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+  };
+  const fmtPct = (x) => (isFinite(x) ? (x * 100).toFixed(2) + "%" : "—");
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const isMarketDay = (d) => { const wd = d.getUTCDay(); return wd !== 0 && wd !== 6; };
 
   function log(msg) {
     const t = new Date();
-    const stamp = `[${pad2(t.getHours())}:${pad2(t.getMinutes())}]`;
-    if (logEl) {
-      logEl.textContent += `\n${stamp} ${msg}`;
-      logEl.scrollTop = logEl.scrollHeight;
-    }
+    const stamp = t.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    el.log.textContent = `[${stamp}] ${msg}\n` + el.log.textContent;
   }
-  function setAlert(msg) {
-    if (!alertEl) return;
+
+  let alertTimer = null;
+  function showAlert(msg) {
     if (!msg) {
-      alertEl.style.display = "none";
-      alertEl.textContent = "";
+      el.alert.style.display = "none";
+      el.alert.textContent = "";
       return;
     }
-    alertEl.style.display = "block";
-    alertEl.textContent = msg;
+    el.alert.textContent = msg;
+    el.alert.style.display = "block";
+    clearTimeout(alertTimer);
+    alertTimer = setTimeout(() => (el.alert.style.display = "none"), 2600);
+  }
+
+  function normWeights(weightsRaw) {
+    const clean = weightsRaw.map((x) => Math.max(0, Number(x) || 0));
+    const s = clean.reduce((p, c) => p + c, 0);
+    if (s <= 0) return clean.map(() => 0);
+    return clean.map((x) => x / s);
   }
 
   // -------------------------
-  // Toggle wiring (Beginner/Advanced + card toggles)
+  // Asset builder
   // -------------------------
-  const advMode = $("spAdvancedMode");
-  const modeLabel = $("spModeLabel");
-  const modeSub = $("spModeSub");
-  const advToggles = $("spAdvancedToggles");
-
-  const showMarginCard = $("spShowMarginCard");
-  const showMarginAdv = $("spShowMarginAdvanced");
-  const showIncomeCard = $("spShowIncomeCard");
-  const showIncomeAdv = $("spShowIncomeAdvanced");
-  const showBillsCard = $("spShowBillsCard");
-
-  const marginCard = $("spMarginCard");
-  const incomeCard = $("spIncomeCard");
-  const billsCard = $("spBillsCard");
-
-  const advMarginRows = root.querySelectorAll('.adv-only[data-adv="margin"]');
-  const advIncomeRows = root.querySelectorAll('.adv-only[data-adv="income"]');
-
-  const incomeOn = $("spIncomeOn");
-  const billsOn = $("spBillsOn");
-
-  const incomeFields = [
-    $("spIncomeTickers"), $("spIncomeWeights"), $("spIncomeSplit"), $("spIncomeYield"),
-    $("spIncomeMode"), $("spAdjustFreq"),
-    $("spTargetRatio"), $("spTargetBorrow"),
-    $("spBandMin"), $("spBandMax")
-  ].filter(Boolean);
-
-  const billsFields = [
-    $("spBillsMonthly"), $("spTaxRate"), $("spBillsFallback"), $("spTaxHandling")
-  ].filter(Boolean);
-
-  const setCardVisible = (el, on) => { if (el) el.classList.toggle("is-hidden", !on); };
-  const setAdvRows = (nodeList, on) => nodeList.forEach((el) => el.classList.toggle("adv-show", !!on));
-
-  function hardDisableIncomeBillsIfHidden() {
-    const isAdv = !!advMode?.checked;
-
-    const incomeVisible = isAdv && !!showIncomeCard?.checked && incomeCard && !incomeCard.classList.contains("is-hidden");
-    if (!incomeVisible || !incomeOn?.checked) {
-      if (incomeOn) incomeOn.checked = false;
-      incomeFields.forEach((f) => (f.disabled = true));
-    } else {
-      incomeFields.forEach((f) => (f.disabled = false));
-    }
-
-    const billsVisible = isAdv && !!showBillsCard?.checked && billsCard && !billsCard.classList.contains("is-hidden");
-    if (!billsVisible || !billsOn?.checked) {
-      if (billsOn) billsOn.checked = false;
-      billsFields.forEach((f) => (f.disabled = true));
-    } else {
-      billsFields.forEach((f) => (f.disabled = false));
-    }
-  }
-
-  function applyModeUI() {
-    const isAdv = !!advMode?.checked;
-
-    if (isAdv) {
-      if (modeLabel) modeLabel.textContent = "Advanced";
-      if (modeSub) modeSub.textContent = "Unhide optional blocks and controls as needed.";
-      if (advToggles) advToggles.classList.remove("hidden");
-
-      setCardVisible(marginCard, !!showMarginCard?.checked);
-      setCardVisible(incomeCard, !!showIncomeCard?.checked);
-      setCardVisible(billsCard, !!showBillsCard?.checked);
-
-      setAdvRows(advMarginRows, !!showMarginCard?.checked && !!showMarginAdv?.checked);
-      setAdvRows(advIncomeRows, !!showIncomeCard?.checked && !!showIncomeAdv?.checked);
-
-      if (!showMarginCard?.checked) setAdvRows(advMarginRows, false);
-      if (!showIncomeCard?.checked) setAdvRows(advIncomeRows, false);
-    } else {
-      if (modeLabel) modeLabel.textContent = "Beginner";
-      if (modeSub) modeSub.textContent = "Simple setup only.";
-      if (advToggles) advToggles.classList.add("hidden");
-
-      setCardVisible(marginCard, false);
-      setCardVisible(incomeCard, false);
-      setCardVisible(billsCard, false);
-
-      setAdvRows(advMarginRows, false);
-      setAdvRows(advIncomeRows, false);
-    }
-
-    hardDisableIncomeBillsIfHidden();
-  }
-
-  advMode?.addEventListener("change", applyModeUI);
-  [showMarginCard, showMarginAdv, showIncomeCard, showIncomeAdv, showBillsCard].forEach((el) => el?.addEventListener("change", applyModeUI));
-  incomeOn?.addEventListener("change", hardDisableIncomeBillsIfHidden);
-  billsOn?.addEventListener("change", hardDisableIncomeBillsIfHidden);
-
-  // Defaults
-  if (advMode) advMode.checked = false;
-  if (showMarginCard) showMarginCard.checked = true;
-  if (showMarginAdv) showMarginAdv.checked = false;
-  if (showIncomeCard) showIncomeCard.checked = false;
-  if (showIncomeAdv) showIncomeAdv.checked = false;
-  if (showBillsCard) showBillsCard.checked = false;
-
-  // -------------------------
-  // Core asset builder -> hidden legacy inputs (spTickers/spWeights)
-  // -------------------------
-  const rowsWrap = $("spAssetRows");
-  const addBtn = $("spAddAsset");
-  const updateBtn = $("spUpdateAlloc");
-  const totalEl = $("spWeightTotal");
-  const legacyTickers = $("spTickers");
-  const legacyWeights = $("spWeights");
   const MAX_ASSETS = 10;
 
   function parseLegacy() {
-    const t = (legacyTickers?.value || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
-    const w = (legacyWeights?.value || "").split(",").map((s) => Number(String(s).trim())).map((x) => (isFinite(x) ? x : 0));
+    const t = (el.legacyTickers?.value || "").split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+    const w = (el.legacyWeights?.value || "").split(",").map(s => Number(String(s).trim())).map(x => isFinite(x) ? x : 0);
     return { t, w };
+  }
+
+  function enforceRemoveButtons() {
+    const rowEls = el.rowsWrap.querySelectorAll(".asset-row");
+    rowEls.forEach((row) => {
+      const btn = row.querySelector("button");
+      if (!btn) return;
+      btn.disabled = rowEls.length <= 1;
+      btn.style.opacity = btn.disabled ? "0.45" : "1";
+      btn.style.cursor = btn.disabled ? "not-allowed" : "pointer";
+    });
+
+    el.addAsset.disabled = rowEls.length >= MAX_ASSETS;
+    el.addAsset.style.opacity = el.addAsset.disabled ? "0.45" : "1";
+    el.addAsset.style.cursor = el.addAsset.disabled ? "not-allowed" : "pointer";
   }
 
   function writeLegacyFromRows() {
     const tickers = [];
     const weights = [];
+    const rowEls = el.rowsWrap.querySelectorAll(".asset-row");
 
-    rowsWrap?.querySelectorAll(".asset-row")?.forEach((row) => {
-      const t = row.querySelector('[data-role="ticker"]')?.value?.trim()?.toUpperCase() || "";
-      const w = Number(row.querySelector('[data-role="weight"]')?.value || 0);
+    rowEls.forEach((row) => {
+      const t = row.querySelector('input[data-role="ticker"]')?.value?.trim()?.toUpperCase() || "";
+      const w = Number(row.querySelector('input[data-role="weight"]')?.value || 0);
       if (!t) return;
       tickers.push(t);
       weights.push(isFinite(w) ? w : 0);
     });
 
-    if (legacyTickers) legacyTickers.value = tickers.join(",");
-    if (legacyWeights) legacyWeights.value = weights.join(",");
+    el.legacyTickers.value = tickers.join(",");
+    el.legacyWeights.value = weights.join(",");
 
     const sum = weights.reduce((p, c) => p + c, 0);
-    if (totalEl) totalEl.textContent = isFinite(sum) ? sum.toFixed(0) : "—";
+    el.totalEl.textContent = isFinite(sum) ? sum.toFixed(0) : "—";
+  }
 
-    // Preview table
-    const tb = $("spAllocPreview");
-    if (tb) {
-      tb.innerHTML = "";
-      if (!tickers.length) {
-        tb.innerHTML = `<tr><td colspan="3" style="padding:8px; color:rgba(245,245,245,0.55);">Add tickers to preview allocation.</td></tr>`;
-      } else {
-        const wsum = weights.reduce((a, b) => a + b, 0) || 1;
-        tickers.forEach((tk, i) => {
-          const pct = (weights[i] / wsum) * 100;
-          tb.insertAdjacentHTML("beforeend", `
-            <tr>
-              <td style="padding:8px; border-bottom:1px solid rgba(255,255,255,0.06);">${tk}</td>
-              <td style="padding:8px; border-bottom:1px solid rgba(255,255,255,0.06);">${pct.toFixed(2)}%</td>
-              <td style="padding:8px; border-bottom:1px solid rgba(255,255,255,0.06); color:rgba(245,245,245,0.55);">Normalized</td>
-            </tr>
-          `);
-        });
-      }
+  function previewAlloc() {
+    const tickers = (el.legacyTickers.value || "").split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+    const weightsRaw = (el.legacyWeights.value || "").split(",").map(s => Number(String(s).trim()));
+    const wNorm = normWeights(weightsRaw);
+
+    el.allocPreview.innerHTML = "";
+
+    if (!tickers.length) {
+      el.allocPreview.innerHTML = `<tr><td colspan="3" style="padding:8px; color:rgba(245,245,245,0.55);">Add at least one ticker.</td></tr>`;
+      return;
     }
+
+    tickers.forEach((t, i) => {
+      const w = wNorm[i] ?? (tickers.length ? 1 / tickers.length : 0);
+      const tr = document.createElement("tr");
+      tr.style.borderBottom = "1px solid rgba(255,255,255,0.06)";
+      tr.innerHTML = `
+        <td style="padding:8px;">${t}</td>
+        <td style="padding:8px;">${(w * 100).toFixed(2)}%</td>
+        <td style="padding:8px; color:rgba(245,245,245,0.65);">${i === 0 ? "Anchor position" : "Satellite / diversifier"}</td>
+      `;
+      el.allocPreview.appendChild(tr);
+    });
   }
 
   function makeRow(ticker = "", weight = "") {
@@ -227,11 +175,11 @@
       <button class="icon-btn" type="button" title="Remove">−</button>
     `;
 
-    const tIn = row.querySelector('[data-role="ticker"]');
-    const wIn = row.querySelector('[data-role="weight"]');
-    const rm = row.querySelector("button");
+    const tIn = row.querySelector('input[data-role="ticker"]');
+    const wIn = row.querySelector('input[data-role="weight"]');
+    const rm  = row.querySelector("button");
 
-    const onChange = () => writeLegacyFromRows();
+    const onChange = () => { writeLegacyFromRows(); previewAlloc(); };
     tIn.addEventListener("input", onChange);
     wIn.addEventListener("input", onChange);
 
@@ -239,668 +187,638 @@
       row.remove();
       enforceRemoveButtons();
       writeLegacyFromRows();
+      previewAlloc();
     });
 
     return row;
   }
 
-  function enforceRemoveButtons() {
-    const rowEls = rowsWrap?.querySelectorAll(".asset-row") || [];
-    rowEls.forEach((row) => {
-      const btn = row.querySelector("button");
-      if (!btn) return;
-      btn.disabled = rowEls.length <= 1;
-      btn.style.opacity = btn.disabled ? "0.45" : "1";
-      btn.style.cursor = btn.disabled ? "not-allowed" : "pointer";
-    });
-
-    if (addBtn) {
-      addBtn.disabled = rowEls.length >= MAX_ASSETS;
-      addBtn.style.opacity = addBtn.disabled ? "0.45" : "1";
-      addBtn.style.cursor = addBtn.disabled ? "not-allowed" : "pointer";
-    }
-  }
-
   function initBuilder() {
-    if (!rowsWrap) return;
-
     const { t, w } = parseLegacy();
     const seedTickers = t.length ? t : ["SPY", "QQQ"];
     const seedWeights = w.length ? w : [50, 50];
 
-    rowsWrap.innerHTML = "";
+    el.rowsWrap.innerHTML = "";
     for (let i = 0; i < Math.min(seedTickers.length, MAX_ASSETS); i++) {
-      rowsWrap.appendChild(makeRow(seedTickers[i], (seedWeights[i] ?? "")));
+      el.rowsWrap.appendChild(makeRow(seedTickers[i], String(seedWeights[i] ?? "")));
     }
     enforceRemoveButtons();
     writeLegacyFromRows();
+    previewAlloc();
   }
 
-  addBtn?.addEventListener("click", () => {
-    const rowEls = rowsWrap.querySelectorAll(".asset-row");
-    if (rowEls.length >= MAX_ASSETS) return;
-    rowsWrap.appendChild(makeRow("", ""));
+  el.addAsset.addEventListener("click", () => {
+    const count = el.rowsWrap.querySelectorAll(".asset-row").length;
+    if (count >= MAX_ASSETS) return;
+    el.rowsWrap.appendChild(makeRow("", ""));
     enforceRemoveButtons();
     writeLegacyFromRows();
+    previewAlloc();
   });
 
-  updateBtn?.addEventListener("click", () => writeLegacyFromRows());
-
-  // Build safeguard: sync builder BEFORE any reads
-  $("spBuild")?.addEventListener("click", () => { try { writeLegacyFromRows(); } catch (e) {} }, true);
-
-  initBuilder();
-  applyModeUI();
-
-  // Seed dates if empty
-  const sd = $("spStartDate");
-  const ed = $("spEndDate");
-  if (sd && !sd.value) sd.value = "2022-12-28";
-  if (ed && !ed.value) ed.value = "2025-12-27";
+  el.updateAlloc.addEventListener("click", () => {
+    writeLegacyFromRows();
+    previewAlloc();
+  });
 
   // -------------------------
-  // Price loader (Worker first, synthetic fallback)
+  // Prices
   // -------------------------
-  const PRICE_BASE = String(window.MICRODCA_PRICE_PROXY_BASE || "").replace(/\/+$/, "");
-
-  async function fetchFromWorker(ticker, startISO, endISO) {
-    const candidates = [
-      `${PRICE_BASE}/api/prices?ticker=${encodeURIComponent(ticker)}&start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`,
-      `${PRICE_BASE}/prices?ticker=${encodeURIComponent(ticker)}&start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`,
-      `${PRICE_BASE}/api/history?ticker=${encodeURIComponent(ticker)}&start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`,
-      `${PRICE_BASE}/history?ticker=${encodeURIComponent(ticker)}&start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`
-    ];
-
-    let lastErr = null;
-    for (const url of candidates) {
-      try {
-        const res = await fetch(url, { method: "GET" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-
-        const rowsRaw = Array.isArray(data) ? data : (data.rows || data.data || data.prices || []);
-        if (!Array.isArray(rowsRaw) || rowsRaw.length < 10) throw new Error("Bad/empty series");
-
-        const rows = rowsRaw.map((r) => {
-          const d = r.date || r.t || r.time || r.dt;
-          const c = r.close ?? r.c ?? r.price ?? r.p;
-          return { date: String(d).slice(0, 10), close: Number(c) };
-        }).filter((r) => r.date && isFinite(r.close));
-
-        if (rows.length < 10) throw new Error("Series parse failed");
-        return rows;
-      } catch (e) {
-        lastErr = e;
-      }
+  function parseCsv(text) {
+    const lines = text.trim().split(/\r?\n/);
+    const out = [];
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(",");
+      if (parts.length < 5) continue;
+      const date = parts[0];
+      const close = Number(parts[4]);
+      if (!date || !isFinite(close)) continue;
+      out.push({ date, close });
     }
-    throw lastErr || new Error("Worker fetch failed");
+    return out;
   }
 
-  function syntheticSeries(startDt, endDt, seed = 100) {
-    const rows = [];
-    let px = seed;
-    const d = new Date(startDt);
-    while (d <= endDt) {
-      const day = d.getDay();
-      if (day !== 0 && day !== 6) {
-        const drift = 0.0002;
-        const noise = (Math.random() - 0.5) * 0.01;
-        px = Math.max(1, px * (1 + drift + noise));
-        rows.push({ date: toISO(d), close: px });
-      }
-      d.setDate(d.getDate() + 1);
-    }
+  async function fetchDailyCloses(ticker) {
+    const t = String(ticker || "").trim().toUpperCase();
+    const url = `${PRICE_PROXY_BASE}/api/prices?ticker=${encodeURIComponent(t)}`;
+    const res = await fetch(url, { mode: "cors" });
+    if (!res.ok) throw new Error(`Worker fetch failed (${res.status})`);
+    const text = await res.text();
+    const rows = parseCsv(text);
+    if (!rows.length) throw new Error("No data returned");
     return rows;
   }
 
-  function intersectDates(seriesByTicker) {
+  function syntheticPrices(ticker, startISO, endISO) {
+    let seed = 0;
+    for (let i = 0; i < ticker.length; i++) seed = (seed * 31 + ticker.charCodeAt(i)) >>> 0;
+    const rand = () => ((seed = (1664525 * seed + 1013904223) >>> 0) / 4294967296);
+
+    const start = new Date(startISO + "T00:00:00Z");
+    const end = new Date(endISO + "T00:00:00Z");
+    const out = [];
+    let px = 60 + rand() * 180;
+
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      if (!isMarketDay(d)) continue;
+      const drift = 0.00025;
+      const vol = 0.012;
+      const shock = (rand() * 2 - 1) * vol;
+      px = Math.max(1, px * (1 + drift + shock));
+      out.push({ date: iso(d), close: px });
+    }
+    return out;
+  }
+
+  async function loadPricesForTickers(tickers, startISO, endISO) {
+    const series = {};
+    for (const t of tickers) {
+      try {
+        log(`Loading price history for ${t}...`);
+        const rows = await fetchDailyCloses(t);
+        const filtered = rows.filter((r) => r.date >= startISO && r.date <= endISO && isFinite(r.close));
+        if (filtered.length < 30) throw new Error("Too few rows in range");
+        series[t] = filtered;
+        log(`Loaded ${filtered.length} rows for ${t}.`);
+      } catch (e) {
+        log(`Worker fetch failed for ${t}. Using synthetic series.`);
+        series[t] = syntheticPrices(t, startISO, endISO);
+      }
+    }
+    return series;
+  }
+
+  function alignTimeline(seriesByTicker) {
     const tickers = Object.keys(seriesByTicker);
-    if (!tickers.length) return [];
-    const sets = tickers.map((tk) => new Set(seriesByTicker[tk].map((r) => r.date)));
-    const first = [...sets[0]];
-    const common = first.filter((d) => sets.every((s) => s.has(d)));
-    common.sort();
-    return common;
-  }
-
-  // -------------------------
-  // Simulation + Chart.js
-  // -------------------------
-  const canvas = $("spCanvas");
-  let chart = null;
-
-  function ensureChart() {
-    if (!canvas || chart) return;
-    chart = new Chart(canvas.getContext("2d"), {
-      type: "line",
-      data: {
-        labels: [],
-        datasets: [
-          { label: "Cash-only", data: [], borderWidth: 2, pointRadius: 0 },
-          { label: "With margin + income mgmt", data: [], borderWidth: 2, pointRadius: 0 }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
-        plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false } },
-        interaction: { mode: "index", intersect: false },
-        scales: { x: { display: false }, y: { display: true } }
-      }
+    const maps = {};
+    tickers.forEach((t) => {
+      const m = new Map();
+      seriesByTicker[t].forEach((r) => m.set(r.date, r.close));
+      maps[t] = m;
     });
-  }
 
-  // KPIs
-  const kDate = $("kDate");
-  const kEqCash = $("kEqCash");
-  const kEqMargin = $("kEqMargin");
-  const kDebt = $("kDebt");
-  const kLTV = $("kLTV");
-  const kCover = $("kCover");
-  const kTax = $("kTax");
-  const kBills = $("kBills");
+    let base = tickers[0];
+    for (const t of tickers) if (seriesByTicker[t].length < seriesByTicker[base].length) base = t;
 
-  function setKpis(row) {
-    if (!row) return;
-    if (kDate) kDate.textContent = row.date || "—";
-    if (kEqCash) kEqCash.textContent = fmtUSD(row.eq_cash);
-    if (kEqMargin) kEqMargin.textContent = fmtUSD(row.eq_margin);
-    if (kDebt) kDebt.textContent = fmtUSD(row.debt);
-    if (kLTV) kLTV.textContent = isFinite(row.ltv) ? `${(row.ltv * 100).toFixed(2)}%` : "—";
-    if (kCover) kCover.textContent = (row.income_coverage == null) ? "—" : `${row.income_coverage.toFixed(2)}x`;
-    if (kTax) kTax.textContent = fmtUSD(row.tax_reserve);
-    if (kBills) kBills.textContent = fmtUSD(row.bills_paid_cum);
-  }
-
-  // Risk UI
-  const riskFill = $("riskFill");
-  const riskGrade = $("riskGrade");
-  const riskProx = $("riskProx");
-  const riskDev = $("riskDev");
-  const riskSignal = $("riskSignal");
-
-  function gradeRisk(prox) {
-    if (!isFinite(prox)) return "—";
-    if (prox < 0.40) return "LOW";
-    if (prox < 0.70) return "MED";
-    if (prox < 0.90) return "HIGH";
-    return "MAX";
-  }
-
-  function setRiskUI(ltv, maxLtv) {
-    const max = Math.max(1e-9, maxLtv);
-    const prox = Math.min(1, Math.max(0, ltv / max));
-    if (riskFill) riskFill.style.width = `${Math.round(prox * 100)}%`;
-    if (riskGrade) riskGrade.textContent = gradeRisk(prox);
-    if (riskProx) riskProx.textContent = `${Math.round(prox * 100)}%`;
-    if (riskDev) riskDev.textContent = "—";
-    if (riskSignal) riskSignal.textContent = prox >= 0.90 ? "Near max LTV" : "OK";
-  }
-
-  // Animation controls
-  const playBtn = $("spPlay");
-  const pauseBtn = $("spPause");
-  const stepBtn = $("spStep");
-  const toEndBtn = $("spToEnd");
-  const speedRange = $("spSpeed");
-  const speedLabel = $("spSpeedLabel");
-
-  const dlPng = $("spDlPng");
-  const dlCsv = $("spDlCsv");
-
-  let sim = { series: [], cursor: 0, playing: false, raf: null, lastTs: 0, maxLtv: 0.35 };
-
-  function setAnimButtons(enabled) {
-    [playBtn, pauseBtn, stepBtn, toEndBtn].forEach((b) => { if (b) b.disabled = !enabled; });
-  }
-  function stopAnim() {
-    sim.playing = false;
-    sim.lastTs = 0;
-    if (sim.raf) cancelAnimationFrame(sim.raf);
-    sim.raf = null;
-  }
-  function redrawChart(uptoIndex) {
-    if (!chart) return;
-    const n = Math.max(0, Math.min(sim.series.length, uptoIndex + 1));
-    chart.data.labels = sim.series.slice(0, n).map((r) => r.date);
-    chart.data.datasets[0].data = sim.series.slice(0, n).map((r) => r.eq_cash);
-    chart.data.datasets[1].data = sim.series.slice(0, n).map((r) => r.eq_margin);
-    chart.update("none");
-  }
-  function tick(ts) {
-    if (!sim.playing) return;
-    const speed = Number(speedRange?.value || 60);
-    if (!sim.lastTs) sim.lastTs = ts;
-    const dt = (ts - sim.lastTs) / 1000;
-    const stepDays = dt * speed;
-    if (stepDays <= 0) { sim.raf = requestAnimationFrame(tick); return; }
-
-    sim.lastTs = ts;
-    sim.cursor = Math.min(sim.series.length - 1, sim.cursor + Math.max(1, Math.floor(stepDays)));
-
-    redrawChart(sim.cursor);
-    const row = sim.series[sim.cursor];
-    setKpis(row);
-    setRiskUI(row.ltv, sim.maxLtv);
-
-    if (vizDesc) vizDesc.textContent = `Day ${sim.cursor + 1} / ${sim.series.length}`;
-
-    if (sim.cursor >= sim.series.length - 1) {
-      stopAnim();
-      if (vizDesc) vizDesc.textContent = "Completed.";
-    } else {
-      sim.raf = requestAnimationFrame(tick);
-    }
-  }
-
-  if (speedRange && speedLabel) {
-    const upd = () => (speedLabel.textContent = `${speedRange.value} d/s`);
-    speedRange.addEventListener("input", upd);
-    upd();
-  }
-
-  playBtn?.addEventListener("click", () => {
-    if (!sim.series.length) return;
-    sim.playing = true;
-    sim.lastTs = 0;
-    sim.raf = requestAnimationFrame(tick);
-  });
-  pauseBtn?.addEventListener("click", () => stopAnim());
-  stepBtn?.addEventListener("click", () => {
-    if (!sim.series.length) return;
-    stopAnim();
-    sim.cursor = Math.min(sim.series.length - 1, sim.cursor + 1);
-    redrawChart(sim.cursor);
-    const row = sim.series[sim.cursor];
-    setKpis(row);
-    setRiskUI(row.ltv, sim.maxLtv);
-    if (vizDesc) vizDesc.textContent = `Day ${sim.cursor + 1} / ${sim.series.length}`;
-  });
-  toEndBtn?.addEventListener("click", () => {
-    if (!sim.series.length) return;
-    stopAnim();
-    sim.cursor = sim.series.length - 1;
-    redrawChart(sim.cursor);
-    const row = sim.series[sim.cursor];
-    setKpis(row);
-    setRiskUI(row.ltv, sim.maxLtv);
-    if (vizDesc) vizDesc.textContent = "Completed.";
-  });
-
-  // Downloads
-  dlPng?.addEventListener("click", () => {
-    if (!canvas) return;
-    const a = document.createElement("a");
-    a.download = "simulated-portfolio.png";
-    a.href = canvas.toDataURL("image/png");
-    a.click();
-  });
-
-  dlCsv?.addEventListener("click", () => {
-    if (!sim.series.length) return;
-    const headers = ["date", "eq_cash", "eq_margin", "debt", "ltv", "tax_reserve", "bills_paid_cum", "income_coverage"];
-    const lines = [headers.join(",")];
-    for (const r of sim.series) {
-      lines.push([
-        r.date,
-        (r.eq_cash ?? 0).toFixed(2),
-        (r.eq_margin ?? 0).toFixed(2),
-        (r.debt ?? 0).toFixed(2),
-        (r.ltv ?? 0).toFixed(6),
-        (r.tax_reserve ?? 0).toFixed(2),
-        (r.bills_paid_cum ?? 0).toFixed(2),
-        (r.income_coverage == null ? "" : r.income_coverage.toFixed(6))
-      ].join(","));
-    }
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "simulated-portfolio.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  });
-
-  // Reset
-  $("spReset")?.addEventListener("click", () => {
-    stopAnim();
-    sim.series = [];
-    sim.cursor = 0;
-    setAnimButtons(false);
-    setAlert("");
-    if (vizDesc) vizDesc.textContent = "Build a simulation to begin.";
-    if (logEl) logEl.textContent = "Ready.";
-    if (chart) {
-      chart.data.labels = [];
-      chart.data.datasets[0].data = [];
-      chart.data.datasets[1].data = [];
-      chart.update("none");
-    }
-    if (riskFill) riskFill.style.width = "0%";
-    if (riskGrade) riskGrade.textContent = "—";
-    if (riskProx) riskProx.textContent = "—";
-    if (riskDev) riskDev.textContent = "—";
-    if (riskSignal) riskSignal.textContent = "—";
-  });
-
-  // -------------------------
-  // Simulation helpers
-  // -------------------------
-  function parseTickersWeights() {
-    writeLegacyFromRows();
-    const tickers = (legacyTickers?.value || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
-    const weightsRaw = (legacyWeights?.value || "").split(",").map((s) => Number(String(s).trim())).map((x) => (isFinite(x) ? x : 0));
-    if (!tickers.length) return { tickers: [], weights: [] };
-    const wsum = weightsRaw.reduce((a, b) => a + b, 0) || 1;
-    return { tickers, weights: weightsRaw.map((w) => w / wsum) };
-  }
-
-  function shouldDcaToday(dateStr, freq) {
-    const d = parseISO(dateStr);
-    if (!d) return false;
-    if (freq === "daily") return true;
-    if (freq === "weekly") return d.getDay() === 1; // Monday
-    if (freq === "monthly") return d.getDate() <= 3; // approx first trading day
-    return true;
-  }
-
-  function portfolioValue(holdings, prices) {
-    let v = 0;
-    for (const tk of Object.keys(holdings)) {
-      const sh = holdings[tk] || 0;
-      const px = prices[tk];
-      if (isFinite(sh) && isFinite(px)) v += sh * px;
-    }
-    return v;
-  }
-
-  function buyWithWeights({ amount, tickers, targetW, holdings, prices, rebalance }) {
-    if (amount <= 0) return;
-
-    let alloc = targetW.slice();
-    if (rebalance) {
-      const pv = portfolioValue(holdings, prices);
-      if (pv > 0) {
-        const curVals = tickers.map((tk) => (holdings[tk] || 0) * (prices[tk] || 0));
-        const curW = curVals.map((v) => v / pv);
-        const gaps = curW.map((w, i) => Math.max(0, targetW[i] - w));
-        const gsum = gaps.reduce((a, b) => a + b, 0);
-        alloc = (gsum > 0) ? gaps.map((g) => g / gsum) : targetW.slice();
+    const dates = [];
+    for (const r of seriesByTicker[base]) {
+      const d = r.date;
+      let ok = true;
+      for (const t of tickers) {
+        if (!maps[t].has(d)) { ok = false; break; }
       }
+      if (ok) dates.push(d);
     }
 
-    tickers.forEach((tk, i) => {
-      const px = prices[tk];
-      if (!isFinite(px) || px <= 0) return;
-      const dollars = amount * (alloc[i] ?? 0);
-      const shares = dollars / px;
-      holdings[tk] = (holdings[tk] || 0) + shares;
-    });
+    const prices = {};
+    tickers.forEach((t) => (prices[t] = dates.map((d) => maps[t].get(d))));
+    return { dates, prices, tickers };
   }
 
-  function parseIncomeSleeve() {
-    if (!incomeOn?.checked) return null;
+  // -------------------------
+  // Simulation
+  // -------------------------
+  function buildBuySchedule(dates, freq) {
+    const buy = new Array(dates.length).fill(false);
+    if (freq === "daily") { for (let i = 0; i < dates.length; i++) buy[i] = true; return buy; }
 
-    const t = ($("spIncomeTickers")?.value || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
-    const wRaw = ($("spIncomeWeights")?.value || "").split(",").map((s) => Number(String(s).trim())).map((x) => (isFinite(x) ? x : 0));
-    const wsum = wRaw.reduce((a, b) => a + b, 0) || 1;
+    if (freq === "weekly") {
+      let lastKey = null;
+      for (let i = 0; i < dates.length; i++) {
+        const d = new Date(dates[i] + "T00:00:00Z");
+        const onejan = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        const week = Math.floor((((d - onejan) / 86400000) + onejan.getUTCDay() + 1) / 7);
+        const key = `${d.getUTCFullYear()}-${week}`;
+        if (key !== lastKey) { buy[i] = true; lastKey = key; }
+      }
+      return buy;
+    }
 
-    const splitPct = Number($("spIncomeSplit")?.value || 0);
-    const yieldPct = Number($("spIncomeYield")?.value || 0);
+    let lastMonth = null;
+    for (let i = 0; i < dates.length; i++) {
+      const d = new Date(dates[i] + "T00:00:00Z");
+      const key = `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}`;
+      if (key !== lastMonth) { buy[i] = true; lastMonth = key; }
+    }
+    return buy;
+  }
+
+  function simulateCashOnly({ dates, prices, tickers, weights, startCash, dcaAmt, freq, rebalanceBuys }) {
+    const n = dates.length;
+    const shares = {}; tickers.forEach((t) => (shares[t] = 0));
+    let cash = startCash;
+
+    const equityArr = new Array(n).fill(0);
+    const buySignal = buildBuySchedule(dates, freq);
+
+    function pv(i) {
+      let v = 0;
+      for (const t of tickers) v += shares[t] * prices[t][i];
+      return v;
+    }
+
+    function curWeights(i) {
+      const v = pv(i);
+      const w = {};
+      if (v <= 0) { tickers.forEach((t) => (w[t] = 0)); return w; }
+      for (const t of tickers) w[t] = (shares[t] * prices[t][i]) / v;
+      return w;
+    }
+
+    function allocate(i, amt) {
+      if (amt <= 0) return;
+
+      let w = weights.slice();
+      if (rebalanceBuys) {
+        const cw = curWeights(i);
+        const raw = tickers.map((t, idx) => Math.max(0, weights[idx] - (cw[t] || 0)));
+        const sum = raw.reduce((p, c) => p + c, 0);
+        if (sum > 0) w = raw.map((x) => x / sum);
+      }
+
+      for (let k = 0; k < tickers.length; k++) {
+        const t = tickers[k];
+        const a = amt * (w[k] || 0);
+        if (a <= 0) continue;
+        shares[t] += a / prices[t][i];
+        cash -= a;
+      }
+      if (Math.abs(cash) < 1e-8) cash = 0;
+    }
+
+    for (let i = 0; i < n; i++) {
+      if (buySignal[i]) {
+        cash += dcaAmt;
+        allocate(i, cash);
+      }
+      equityArr[i] = pv(i) + cash;
+    }
 
     return {
-      tickers: t,
-      weights: wRaw.map((x) => x / wsum),
-      split: Math.min(1, Math.max(0, splitPct / 100)),
-      yieldAnnual: Math.max(0, yieldPct / 100)
+      dates,
+      equityArr,
+      debtArr: new Array(n).fill(0),
+      ltvArr: new Array(n).fill(0),
+      coverArr: new Array(n).fill(NaN),
+      taxReserveArr: new Array(n).fill(0),
+      billsPaidArr: new Array(n).fill(0),
     };
   }
 
   // -------------------------
-  // Build simulation (main)
+  // Canvas rendering (DEVICE-PIXEL ONLY) — fixes Webflow rendering
   // -------------------------
-  async function buildSimulation() {
-    setAlert("");
-    if (logEl) logEl.textContent = "Ready.";
-    log("Starting build…");
+  const ctx = el.canvas.getContext("2d");
 
-    ensureChart();
+  function resizeCanvas() {
+    const rect = el.chartFrame.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
 
-    const startDt = parseISO($("spStartDate")?.value) || parseISO("2022-12-28");
-    const endDt = parseISO($("spEndDate")?.value) || parseISO("2025-12-27");
-    if (!startDt || !endDt || endDt <= startDt) {
-      setAlert("Invalid date range. Please set Start date < End date.");
-      return;
-    }
-    const startISO = toISO(startDt);
-    const endISO = toISO(endDt);
+    const w = Math.max(1, Math.round(rect.width * dpr));
+    const h = Math.max(1, Math.round(rect.height * dpr));
 
-    const { tickers, weights } = parseTickersWeights();
-    if (!tickers.length) {
-      setAlert("Add at least one core asset ticker.");
-      return;
-    }
+    if (el.canvas.width !== w) el.canvas.width = w;
+    if (el.canvas.height !== h) el.canvas.height = h;
 
-    const startCash = Number($("spStartCash")?.value || 0);
-    const dcaAmt = Number($("spDcaAmt")?.value || 0);
-    const freq = $("spFreq")?.value || "daily";
-    const rebalance = !!$("spRebalance")?.checked;
-
-    // Margin settings (only if margin card visible AND enabled)
-    const useMargin = !!$("spUseMargin")?.checked && !!advMode?.checked && !!showMarginCard?.checked && marginCard && !marginCard.classList.contains("is-hidden");
-    const marginRate = Math.max(0, Number($("spMarginRate")?.value || 0)) / 100;
-    const maxLtv = Math.min(0.95, Math.max(0, Number($("spMaxLTV")?.value || 0) / 100));
-    const marginPolicy = $("spMarginPolicy")?.value || "assist";
-    const dayCount = Number($("spDayCount")?.value || 365) === 360 ? 360 : 365;
-
-    sim.maxLtv = maxLtv;
-
-    const income = parseIncomeSleeve();
-    const billsEnabled = !!billsOn?.checked && !!advMode?.checked && !!showBillsCard?.checked && billsCard && !billsCard.classList.contains("is-hidden");
-
-    const billsMonthly = Math.max(0, Number($("spBillsMonthly")?.value || 0));
-    const taxRate = Math.min(0.8, Math.max(0, Number($("spTaxRate")?.value || 0) / 100));
-    const taxHandling = $("spTaxHandling")?.value || "reserve";
-
-    // Load prices
-    const allTickers = new Set(tickers);
-    if (income?.tickers?.length) income.tickers.forEach((t) => allTickers.add(t));
-
-    const seriesByTicker = {};
-    for (const tk of allTickers) {
-      try {
-        log(`Loading price history for ${tk}…`);
-        const rows = await fetchFromWorker(tk, startISO, endISO);
-        seriesByTicker[tk] = rows;
-        log(`Loaded ${rows.length} rows for ${tk}.`);
-      } catch (e) {
-        log(`Worker fetch failed for ${tk}. Using synthetic series.`);
-        seriesByTicker[tk] = syntheticSeries(startDt, endDt, 50 + Math.random() * 200);
-      }
-    }
-
-    const dates = intersectDates(seriesByTicker);
-    if (dates.length < 30) {
-      setAlert("Not enough overlapping price history for selected tickers/dates.");
-      return;
-    }
-
-    // date->close map
-    const pxMap = {};
-    for (const tk of Object.keys(seriesByTicker)) {
-      pxMap[tk] = new Map(seriesByTicker[tk].map((r) => [r.date, r.close]));
-    }
-
-    const holdingsCash = {};
-    const holdingsMargin = {};
-    tickers.forEach((tk) => { holdingsCash[tk] = 0; holdingsMargin[tk] = 0; });
-
-    const incomeHold = {};
-    if (income?.tickers?.length) income.tickers.forEach((tk) => { incomeHold[tk] = 0; });
-
-    let cashCash = startCash;
-    let cashMargin = startCash;
-    let debt = 0;
-    let taxReserve = 0;
-    let billsPaidCum = 0;
-
-    let lastMonth = null;
-    let lastDist = 0;
-
-    log(`Running simulation for ${dates.length} market days…`);
-
-    const out = [];
-
-    for (let i = 0; i < dates.length; i++) {
-      const date = dates[i];
-
-      // Prices today
-      const prices = {};
-      for (const tk of allTickers) prices[tk] = pxMap[tk].get(date);
-
-      // Interest accrual (margin)
-      const dailyRate = marginRate / dayCount;
-      if (useMargin && debt > 0 && dailyRate > 0) {
-        const interest = debt * dailyRate;
-        if (cashMargin >= interest) cashMargin -= interest;
-        else { debt += (interest - cashMargin); cashMargin = 0; }
-      }
-
-      // DCA
-      const doDca = shouldDcaToday(date, freq);
-      if (doDca && dcaAmt > 0) {
-        // cash-only
-        const spendCash = Math.min(cashCash, dcaAmt);
-        cashCash -= spendCash;
-        buyWithWeights({ amount: spendCash, tickers, targetW: weights, holdings: holdingsCash, prices, rebalance });
-
-        // margin line
-        let spendTotal = dcaAmt;
-        let fromCash = Math.min(cashMargin, spendTotal);
-        cashMargin -= fromCash;
-        let remaining = spendTotal - fromCash;
-
-        if (useMargin) {
-          const coreVal = portfolioValue(holdingsMargin, prices);
-          const incVal = income ? portfolioValue(incomeHold, prices) : 0;
-          const assetVal = coreVal + incVal;
-          const maxDebtAllowed = assetVal * maxLtv;
-          const canBorrow = Math.max(0, maxDebtAllowed - debt);
-
-          const wantBorrow = (marginPolicy === "always") ? remaining
-            : (marginPolicy === "assist") ? remaining
-            : 0;
-
-          const borrowNow = Math.min(canBorrow, wantBorrow);
-          debt += borrowNow;
-          remaining -= borrowNow;
-        }
-
-        const invested = spendTotal - Math.max(0, remaining);
-        if (invested > 0) {
-          const incPart = income ? invested * income.split : 0;
-          const corePart = invested - incPart;
-
-          buyWithWeights({ amount: corePart, tickers, targetW: weights, holdings: holdingsMargin, prices, rebalance });
-
-          if (income && income.tickers.length) {
-            buyWithWeights({ amount: incPart, tickers: income.tickers, targetW: income.weights, holdings: incomeHold, prices, rebalance: false });
-          }
-        }
-      }
-
-      // Month-end distribution: trigger on month change OR last day
-      const dObj = parseISO(date);
-      const monthKey = `${dObj.getFullYear()}-${pad2(dObj.getMonth() + 1)}`;
-      const isMonthEnd = (lastMonth !== null && monthKey !== lastMonth);
-      const isLast = (i === dates.length - 1);
-
-      if (income && (isMonthEnd || isLast)) {
-        const incVal = portfolioValue(incomeHold, prices);
-        const dist = incVal * (income.yieldAnnual / 12);
-        lastDist = dist;
-
-        let available = dist;
-
-        const tax = dist * taxRate;
-        if (taxHandling === "reserve") {
-          taxReserve += tax;
-          available -= tax;
-        }
-
-        if (billsEnabled) {
-          const pay = Math.min(available, billsMonthly);
-          billsPaidCum += pay;
-          available -= pay;
-        }
-
-        if (useMargin && debt > 0 && available > 0) {
-          const payDown = Math.min(debt, available);
-          debt -= payDown;
-          available -= payDown;
-        }
-
-        cashMargin += Math.max(0, available);
-      }
-
-      lastMonth = monthKey;
-
-      // Values
-      const pvCash = portfolioValue(holdingsCash, prices);
-      const pvMarginCore = portfolioValue(holdingsMargin, prices);
-      const pvIncome = income ? portfolioValue(incomeHold, prices) : 0;
-
-      const eqCash = cashCash + pvCash;
-      const grossAssets = cashMargin + pvMarginCore + pvIncome;
-      const eqMargin = grossAssets - debt;
-
-      const ltv = grossAssets > 0 ? (debt / grossAssets) : 0;
-
-      // Coverage metric (simplified)
-      const monthlyInterestApprox = (useMargin && debt > 0) ? (debt * marginRate / 12) : 0;
-      const denom = Math.max(1e-9, monthlyInterestApprox + (billsEnabled ? billsMonthly : 0) + (taxHandling === "reserve" ? lastDist * taxRate : 0));
-      const incomeCoverage = income ? (lastDist / denom) : null;
-
-      out.push({
-        date,
-        eq_cash: eqCash,
-        eq_margin: eqMargin,
-        debt,
-        ltv,
-        tax_reserve: taxReserve,
-        bills_paid_cum: billsPaidCum,
-        income_coverage: incomeCoverage
-      });
-    }
-
-    // Finalize
-    sim.series = out;
-    sim.cursor = 0;
-    stopAnim();
-
-    redrawChart(0);
-    setKpis(sim.series[0]);
-    setRiskUI(sim.series[0].ltv, sim.maxLtv);
-
-    setAnimButtons(true);
-    if (vizDesc) vizDesc.textContent = `Day 1 / ${sim.series.length}`;
-    log("Simulation built successfully.");
+    return { w, h, dpr };
   }
 
-  // Build click
-  $("spBuild")?.addEventListener("click", async () => {
-    try {
-      await buildSimulation();
-    } catch (e) {
+  function clearAll(w, h) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+  }
+
+  function drawGrid(w, h) {
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    const stepY = h / 7;
+    for (let i = 1; i < 7; i++) {
+      ctx.beginPath();
+      ctx.moveTo(0, i * stepY);
+      ctx.lineTo(w, i * stepY);
+      ctx.stroke();
+    }
+    const stepX = w / 10;
+    for (let i = 1; i < 10; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * stepX, 0);
+      ctx.lineTo(i * stepX, h);
+      ctx.stroke();
+    }
+  }
+
+  function minMax(arr, upto) {
+    const u = Math.max(0, Math.min(upto, arr.length - 1));
+    let mn = Infinity, mx = -Infinity;
+    for (let i = 0; i <= u; i++) {
+      const v = arr[i];
+      if (!isFinite(v)) continue;
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+    if (!isFinite(mn) || !isFinite(mx) || mn === mx) {
+      mn = 0;
+      mx = isFinite(mx) && mx > 0 ? mx : 1;
+    }
+    return { mn, mx };
+  }
+
+  function plotLine(arr, upto, w, h, pad, stroke, range, alpha = 1) {
+    const n = arr.length;
+    if (n < 2) return;
+    const u = Math.max(0, Math.min(Math.floor(upto), n - 1));
+
+    const x0 = pad, x1 = w - pad;
+    const y0 = pad, y1 = h - pad;
+
+    const mn = range.mn, mx = range.mx;
+    const span = (mx - mn) || 1;
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = stroke;
+    ctx.globalAlpha = alpha;
+
+    let started = false;
+    ctx.beginPath();
+    for (let i = 0; i <= u; i++) {
+      const v = arr[i];
+      if (!isFinite(v)) { started = false; continue; }
+      const x = x0 + (x1 - x0) * (i / (n - 1));
+      const y = y1 - (y1 - y0) * ((v - mn) / span);
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawCursor(i, w, h, pad, n) {
+    if (n < 2) return;
+    const x0 = pad, x1 = w - pad;
+    const x = x0 + (x1 - x0) * (i / (n - 1));
+    ctx.strokeStyle = "rgba(239,81,34,0.55)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, pad);
+    ctx.lineTo(x, h - pad);
+    ctx.stroke();
+  }
+
+  // -------------------------
+  // State + playback
+  // -------------------------
+  const state = {
+    built: false,
+    playing: false,
+    i: 0,
+    lastTs: 0,
+    sim: null,
+    meta: { name: "" },
+  };
+
+  function setControlsBuilt(on) {
+    el.play.disabled = !on;
+    el.pause.disabled = !on;
+    el.step.disabled = !on;
+    el.toEnd.disabled = !on;
+  }
+
+  function drawFrame(i) {
+    if (!state.built) return;
+
+    const { w, h } = resizeCanvas();
+    clearAll(w, h);
+    drawGrid(w, h);
+
+    const pad = Math.round(Math.min(w, h) * 0.05);
+
+    const mode = el.mode.value;
+    const n = state.sim.dates.length;
+
+    const rEq = minMax(state.sim.equityArr, i);
+
+    if (mode === "equity") {
+      plotLine(state.sim.equityArr, i, w, h, pad, "rgba(245,245,245,0.75)", rEq);
+      plotLine(state.sim.equityArr, i, w, h, pad, "rgba(239,81,34,0.95)", rEq);
+    } else if (mode === "debt") {
+      const rD = minMax(state.sim.debtArr, i);
+      plotLine(state.sim.debtArr, i, w, h, pad, "rgba(245,245,245,0.85)", rD);
+    } else {
+      plotLine(state.sim.equityArr, i, w, h, pad, "rgba(245,245,245,0.75)", rEq);
+      plotLine(state.sim.equityArr, i, w, h, pad, "rgba(239,81,34,0.95)", rEq);
+      const rD = minMax(state.sim.debtArr, i);
+      plotLine(state.sim.debtArr, i, w, h, pad, "rgba(245,245,245,0.85)", rD, 0.55);
+    }
+
+    drawCursor(i, w, h, pad, n);
+
+    const date = state.sim.dates[i] || "—";
+    const eq = state.sim.equityArr[i];
+    const debt = state.sim.debtArr[i];
+    const ltv = state.sim.ltvArr[i];
+    const cover = state.sim.coverArr[i];
+    const taxRes = state.sim.taxReserveArr[i];
+    const billsP = state.sim.billsPaidArr[i];
+
+    el.kDate.textContent = date;
+    el.kEqCash.textContent = fmtUSD(eq);
+    el.kEqMargin.textContent = fmtUSD(eq);
+    el.kDebt.textContent = fmtUSD(debt);
+    el.kLTV.textContent = fmtPct(ltv);
+    el.kCover.textContent = isFinite(cover) ? (cover === Infinity ? "∞" : cover.toFixed(2) + "x") : "—";
+    el.kTax.textContent = fmtUSD(taxRes);
+    el.kBills.textContent = fmtUSD(billsP);
+
+    const totalDays = state.sim.dates.length;
+    const label = state.meta.name || "Simulated Account";
+    el.vizDesc.textContent = `${label} • Day ${i + 1} / ${totalDays}`;
+  }
+
+  function tick(ts) {
+    if (!state.playing) { state.lastTs = ts; return; }
+    const dt = (ts - state.lastTs) / 1000;
+    state.lastTs = ts;
+
+    const speed = Number(el.speed.value);
+    const advance = speed * dt;
+
+    const n = state.sim.dates.length;
+    state.i = Math.min(n - 1, state.i + advance);
+    drawFrame(Math.floor(state.i));
+
+    if (Math.floor(state.i) >= n - 1) {
+      state.playing = false;
+      log("Reached end of simulation.");
+    } else {
+      requestAnimationFrame(tick);
+    }
+  }
+
+  function safeFileBase() {
+    const name = (state.meta?.name || "simulated-portfolio").trim() || "simulated-portfolio";
+    const clean = name.replace(/[^a-z0-9\-_]+/gi, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
+    const start = state.sim?.dates?.[0] || "";
+    const end = state.sim?.dates?.[state.sim.dates.length - 1] || "";
+    return `${clean}_${start}_to_${end}`.replace(/__+/g, "_");
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadCanvasPNG() {
+    if (!state.built) { showAlert("Build a simulation first."); return; }
+    drawFrame(Math.floor(state.i));
+    el.canvas.toBlob((blob) => {
+      if (!blob) { showAlert("PNG export failed."); return; }
+      downloadBlob(blob, `${safeFileBase()}.png`);
+      log("Exported PNG.");
+    }, "image/png");
+  }
+
+  function downloadSimulationCSV() {
+    if (!state.built) { showAlert("Build a simulation first."); return; }
+
+    const dates = state.sim.dates;
+    const eq = state.sim.equityArr;
+    const debt = state.sim.debtArr;
+    const ltv = state.sim.ltvArr;
+
+    const header = ["date","equity","debt","ltv"].join(",");
+    const rows = [header];
+
+    for (let i = 0; i < dates.length; i++) {
+      rows.push([
+        dates[i],
+        isFinite(eq[i]) ? eq[i] : "",
+        isFinite(debt[i]) ? debt[i] : "",
+        isFinite(ltv[i]) ? ltv[i] : "",
+      ].join(","));
+    }
+
+    downloadBlob(new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" }), `${safeFileBase()}.csv`);
+    log("Exported CSV.");
+  }
+
+  // -------------------------
+  // Build simulation
+  // -------------------------
+  async function buildSimulation() {
+    el.log.textContent = "Building simulation...\n";
+    showAlert(null);
+
+    writeLegacyFromRows();
+    previewAlloc();
+
+    const name = (el.name.value || "").trim();
+    const startCash = Math.max(0, Number(el.startCash.value) || 0);
+    const dcaAmt = Math.max(0, Number(el.dcaAmt.value) || 0);
+    const freq = el.freq.value;
+    const startISO = el.startDate.value;
+    const endISO = el.endDate.value;
+    const rebalanceBuys = !!el.rebalance.checked;
+
+    if (!startISO || !endISO || startISO > endISO) {
+      log("Invalid date range.");
+      showAlert("Invalid date range.");
+      return;
+    }
+
+    const tickers = (el.legacyTickers.value || "").split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+    const weightsRaw = (el.legacyWeights.value || "").split(",").map(s => Number(String(s).trim()));
+    let weights = normWeights(weightsRaw);
+
+    if (!tickers.length) {
+      log("Add at least one ticker.");
+      showAlert("Add at least one ticker.");
+      return;
+    }
+
+    const sum = weights.reduce((p,c)=>p+c,0);
+    if (sum <= 0) weights = tickers.map(() => 1 / tickers.length);
+
+    log(`Loading prices for ${tickers.length} tickers...`);
+    const series = await loadPricesForTickers(tickers, startISO, endISO);
+    const aligned = alignTimeline(series);
+
+    if (aligned.dates.length < 40) {
+      log("Not enough overlapping history across tickers. Try a wider range or fewer tickers.");
+      showAlert("Not enough overlapping history. Try a wider range or fewer tickers.");
+      return;
+    }
+
+    const prices = {};
+    tickers.forEach((t) => (prices[t] = aligned.prices[t]));
+
+    const sim = simulateCashOnly({
+      dates: aligned.dates,
+      prices,
+      tickers,
+      weights,
+      startCash,
+      dcaAmt,
+      freq,
+      rebalanceBuys,
+    });
+
+    state.sim = sim;
+    state.meta = { name };
+    state.built = true;
+    state.playing = false;
+    state.i = 0;
+    state.lastTs = performance.now();
+
+    setControlsBuilt(true);
+    drawFrame(0);
+
+    log(`Simulation built successfully (${aligned.dates.length} market days).`);
+  }
+
+  // -------------------------
+  // Wiring
+  // -------------------------
+  el.build.addEventListener("click", () => {
+    buildSimulation().catch((e) => {
       console.error(e);
-      setAlert(`Build failed: ${e?.message || e}`);
-      log(`ERROR: ${e?.message || e}`);
-      stopAnim();
-      setAnimButtons(false);
+      log(`Build failed: ${e?.message || e}`);
+      showAlert(`Build failed: ${e?.message || e}`);
+    });
+  });
+
+  el.reset.addEventListener("click", () => {
+    state.built = false;
+    state.playing = false;
+    state.i = 0;
+    state.sim = null;
+    state.meta = { name: "" };
+    showAlert(null);
+
+    setControlsBuilt(false);
+
+    el.kDate.textContent = "—";
+    el.kEqCash.textContent = "—";
+    el.kEqMargin.textContent = "—";
+    el.kDebt.textContent = "—";
+    el.kLTV.textContent = "—";
+    el.kCover.textContent = "—";
+    el.kTax.textContent = "—";
+    el.kBills.textContent = "—";
+
+    el.vizDesc.textContent = "Build a simulation to begin.";
+    el.badge.textContent = "SIMULATED";
+    el.log.textContent = "Ready.";
+
+    const { w, h } = resizeCanvas();
+    clearAll(w, h);
+  });
+
+  el.play.addEventListener("click", () => {
+    if (!state.built) return;
+    const n = state.sim.dates.length;
+    if (Math.floor(state.i) >= n - 1) state.i = 0;
+    state.playing = true;
+    state.lastTs = performance.now();
+    log("Play.");
+    requestAnimationFrame(tick);
+  });
+
+  el.pause.addEventListener("click", () => {
+    if (!state.built) return;
+    state.playing = false;
+    log("Pause.");
+  });
+
+  el.step.addEventListener("click", () => {
+    if (!state.built) return;
+    state.playing = false;
+    const n = state.sim.dates.length;
+    state.i = Math.min(n - 1, Math.floor(state.i) + 1);
+    drawFrame(Math.floor(state.i));
+  });
+
+  el.toEnd.addEventListener("click", () => {
+    if (!state.built) return;
+    state.playing = false;
+    state.i = state.sim.dates.length - 1;
+    drawFrame(Math.floor(state.i));
+    log("Jumped to end.");
+  });
+
+  el.mode.addEventListener("change", () => {
+    if (state.built) drawFrame(Math.floor(state.i));
+  });
+
+  el.speed.addEventListener("input", () => {
+    el.speedLabel.textContent = `${el.speed.value} d/s`;
+  });
+  el.speedLabel.textContent = `${el.speed.value} d/s`;
+
+  el.dlPng.addEventListener("click", downloadCanvasPNG);
+  el.dlCsv.addEventListener("click", downloadSimulationCSV);
+
+  window.addEventListener("resize", () => {
+    if (state.built) drawFrame(Math.floor(state.i));
+    else {
+      const { w, h } = resizeCanvas();
+      clearAll(w, h);
     }
   });
 
-  // Initial
-  setAnimButtons(false);
+  // Seed dates
+  const today = new Date();
+  const end = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  const start = new Date(end.getTime() - 1000 * 60 * 60 * 24 * 365 * 3);
+  if (el.startDate && !el.startDate.value) el.startDate.value = iso(start);
+  if (el.endDate && !el.endDate.value) el.endDate.value = iso(end);
+
+  initBuilder();
+  const { w, h } = resizeCanvas();
+  clearAll(w, h);
 })();
