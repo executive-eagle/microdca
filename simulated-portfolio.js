@@ -1,10 +1,9 @@
 (() => {
   // =========================
-  // HARD SINGLETON GUARD (prevents multi-loads)
+  // HARD SINGLETON GUARD
   // =========================
-  const VERSION = "sim-portfolio v3.1 (singleton+timeout+pointdraw)";
+  const VERSION = "sim-portfolio v3.2 (full-history line + progress)";
   if (window.__MICRODCA_SIM_PORTFOLIO_SINGLETON__) {
-    // If you see this in console, you have multiple embeds or multiple script tags.
     console.warn("[MicroDCA Simulator] Duplicate load blocked:", VERSION);
     return;
   }
@@ -62,7 +61,6 @@
     mode: $("spMode"),
   };
 
-  // If DOM isn't ready yet (rare in footer, but Webflow can move code), wait.
   if (!el.canvas || !el.chartFrame || !el.build || !el.rowsWrap) {
     document.addEventListener("DOMContentLoaded", () => location.reload());
     return;
@@ -146,7 +144,7 @@
       weights.push(isFinite(w) ? w : 0);
     });
 
-    // Dedupe tickers while keeping order (prevents weird double-load logs)
+    // Dedupe tickers to prevent weird double-loads
     const seen = new Set();
     const dt = [];
     const dw = [];
@@ -266,8 +264,7 @@
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), ms);
     try {
-      const res = await fetch(url, { mode: "cors", signal: ctrl.signal });
-      return res;
+      return await fetch(url, { mode: "cors", signal: ctrl.signal });
     } finally {
       clearTimeout(t);
     }
@@ -276,7 +273,7 @@
   async function fetchDailyCloses(ticker) {
     const t = String(ticker || "").trim().toUpperCase();
     const url = `${PRICE_PROXY_BASE}/api/prices?ticker=${encodeURIComponent(t)}`;
-    const res = await fetchWithTimeout(url, 12000); // 12s timeout
+    const res = await fetchWithTimeout(url, 12000);
     if (!res.ok) throw new Error(`Worker fetch failed (${res.status})`);
     const text = await res.text();
     const rows = parseCsv(text);
@@ -441,7 +438,7 @@
   }
 
   // -------------------------
-  // Canvas rendering
+  // Canvas rendering (full-history + progress)
   // -------------------------
   const ctx = el.canvas.getContext("2d");
 
@@ -473,10 +470,9 @@
     }
   }
 
-  function minMax(arr, upto) {
-    const u = Math.max(0, Math.min(upto, arr.length - 1));
+  function minMaxAll(arr) {
     let mn = Infinity, mx = -Infinity;
-    for (let i = 0; i <= u; i++) {
+    for (let i = 0; i < arr.length; i++) {
       const v = arr[i];
       if (!isFinite(v)) continue;
       if (v < mn) mn = v;
@@ -489,27 +485,13 @@
   function plotLine(arr, upto, w, h, pad, stroke, range, alpha = 1) {
     const n = arr.length;
     const u = Math.max(0, Math.min(Math.floor(upto), n - 1));
-    if (n < 1) return;
+    if (n < 2) return;
 
     const x0 = pad, x1 = w - pad;
     const y0 = pad, y1 = h - pad;
+
     const mn = range.mn, mx = range.mx;
     const span = (mx - mn) || 1;
-
-    // If only one point is visible, draw a dot so Day 1 shows.
-    if (u === 0) {
-      const v = arr[0];
-      if (!isFinite(v)) return;
-      const x = x0;
-      const y = y1 - (y1 - y0) * ((v - mn) / span);
-      ctx.fillStyle = stroke;
-      ctx.globalAlpha = alpha;
-      ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      return;
-    }
 
     ctx.lineWidth = 2;
     ctx.strokeStyle = stroke;
@@ -529,6 +511,10 @@
     ctx.globalAlpha = 1;
   }
 
+  function plotFull(arr, w, h, pad, stroke, range, alpha = 1) {
+    plotLine(arr, arr.length - 1, w, h, pad, stroke, range, alpha);
+  }
+
   function drawCursor(i, w, h, pad, n) {
     if (n < 2) return;
     const x0 = pad, x1 = w - pad;
@@ -539,6 +525,12 @@
     ctx.moveTo(x, pad);
     ctx.lineTo(x, h - pad);
     ctx.stroke();
+
+    // small head dot
+    ctx.fillStyle = "rgba(239,81,34,0.95)";
+    ctx.beginPath();
+    ctx.arc(x, pad + 10, 4, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // -------------------------
@@ -571,19 +563,24 @@
     const mode = el.mode.value;
     const n = state.sim.dates.length;
 
-    const rEq = minMax(state.sim.equityArr, i);
+    // Full range computed once from full array
+    const rEq = minMaxAll(state.sim.equityArr);
 
     if (mode === "equity") {
-      plotLine(state.sim.equityArr, i, w, h, pad, "rgba(245,245,245,0.75)", rEq);
-      plotLine(state.sim.equityArr, i, w, h, pad, "rgba(239,81,34,0.95)", rEq);
+      // full-history baseline
+      plotFull(state.sim.equityArr, w, h, pad, "rgba(245,245,245,0.22)", rEq, 1);
+      // progress highlight
+      plotLine(state.sim.equityArr, i, w, h, pad, "rgba(239,81,34,0.95)", rEq, 1);
     } else if (mode === "debt") {
-      const rD = minMax(state.sim.debtArr, i);
-      plotLine(state.sim.debtArr, i, w, h, pad, "rgba(245,245,245,0.85)", rD);
+      const rD = minMaxAll(state.sim.debtArr);
+      plotFull(state.sim.debtArr, w, h, pad, "rgba(245,245,245,0.22)", rD, 1);
+      plotLine(state.sim.debtArr, i, w, h, pad, "rgba(245,245,245,0.85)", rD, 1);
     } else {
-      plotLine(state.sim.equityArr, i, w, h, pad, "rgba(245,245,245,0.75)", rEq);
-      plotLine(state.sim.equityArr, i, w, h, pad, "rgba(239,81,34,0.95)", rEq);
-      const rD = minMax(state.sim.debtArr, i);
-      plotLine(state.sim.debtArr, i, w, h, pad, "rgba(245,245,245,0.85)", rD, 0.55);
+      plotFull(state.sim.equityArr, w, h, pad, "rgba(245,245,245,0.22)", rEq, 1);
+      plotLine(state.sim.equityArr, i, w, h, pad, "rgba(239,81,34,0.95)", rEq, 1);
+
+      const rD = minMaxAll(state.sim.debtArr);
+      plotFull(state.sim.debtArr, w, h, pad, "rgba(245,245,245,0.10)", rD, 1);
     }
 
     drawCursor(i, w, h, pad, n);
