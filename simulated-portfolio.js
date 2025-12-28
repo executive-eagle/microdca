@@ -1,6 +1,14 @@
 (() => {
-  if (window.__microdcaSimPortfolioFixedLoaded) return;
-  window.__microdcaSimPortfolioFixedLoaded = true;
+  // =========================
+  // HARD SINGLETON GUARD (prevents multi-loads)
+  // =========================
+  const VERSION = "sim-portfolio v3.1 (singleton+timeout+pointdraw)";
+  if (window.__MICRODCA_SIM_PORTFOLIO_SINGLETON__) {
+    // If you see this in console, you have multiple embeds or multiple script tags.
+    console.warn("[MicroDCA Simulator] Duplicate load blocked:", VERSION);
+    return;
+  }
+  window.__MICRODCA_SIM_PORTFOLIO_SINGLETON__ = { version: VERSION, ts: Date.now() };
 
   const PRICE_PROXY_BASE = (window.MICRODCA_PRICE_PROXY_BASE || "https://simulated-portfolio.microdca.com")
     .replace(/\/+$/, "");
@@ -54,7 +62,11 @@
     mode: $("spMode"),
   };
 
-  if (!el.canvas || !el.chartFrame || !el.build) return;
+  // If DOM isn't ready yet (rare in footer, but Webflow can move code), wait.
+  if (!el.canvas || !el.chartFrame || !el.build || !el.rowsWrap) {
+    document.addEventListener("DOMContentLoaded", () => location.reload());
+    return;
+  }
 
   // -------------------------
   // Helpers
@@ -85,7 +97,7 @@
     el.alert.textContent = msg;
     el.alert.style.display = "block";
     clearTimeout(alertTimer);
-    alertTimer = setTimeout(() => (el.alert.style.display = "none"), 2600);
+    alertTimer = setTimeout(() => (el.alert.style.display = "none"), 3000);
   }
 
   function normWeights(weightsRaw) {
@@ -134,10 +146,22 @@
       weights.push(isFinite(w) ? w : 0);
     });
 
-    el.legacyTickers.value = tickers.join(",");
-    el.legacyWeights.value = weights.join(",");
+    // Dedupe tickers while keeping order (prevents weird double-load logs)
+    const seen = new Set();
+    const dt = [];
+    const dw = [];
+    for (let i = 0; i < tickers.length; i++) {
+      const k = tickers[i];
+      if (seen.has(k)) continue;
+      seen.add(k);
+      dt.push(k);
+      dw.push(weights[i] ?? 0);
+    }
 
-    const sum = weights.reduce((p, c) => p + c, 0);
+    el.legacyTickers.value = dt.join(",");
+    el.legacyWeights.value = dw.join(",");
+
+    const sum = dw.reduce((p, c) => p + c, 0);
     el.totalEl.textContent = isFinite(sum) ? sum.toFixed(0) : "—";
   }
 
@@ -222,7 +246,7 @@
   });
 
   // -------------------------
-  // Prices
+  // Prices (with timeout)
   // -------------------------
   function parseCsv(text) {
     const lines = text.trim().split(/\r?\n/);
@@ -238,10 +262,21 @@
     return out;
   }
 
+  async function fetchWithTimeout(url, ms) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), ms);
+    try {
+      const res = await fetch(url, { mode: "cors", signal: ctrl.signal });
+      return res;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
   async function fetchDailyCloses(ticker) {
     const t = String(ticker || "").trim().toUpperCase();
     const url = `${PRICE_PROXY_BASE}/api/prices?ticker=${encodeURIComponent(t)}`;
-    const res = await fetch(url, { mode: "cors" });
+    const res = await fetchWithTimeout(url, 12000); // 12s timeout
     if (!res.ok) throw new Error(`Worker fetch failed (${res.status})`);
     const text = await res.text();
     const rows = parseCsv(text);
@@ -281,7 +316,7 @@
         series[t] = filtered;
         log(`Loaded ${filtered.length} rows for ${t}.`);
       } catch (e) {
-        log(`Worker fetch failed for ${t}. Using synthetic series.`);
+        log(`Fetch failed for ${t} (${e?.name === "AbortError" ? "timeout" : (e?.message || "error")}). Using synthetic series.`);
         series[t] = syntheticPrices(t, startISO, endISO);
       }
     }
@@ -406,20 +441,17 @@
   }
 
   // -------------------------
-  // Canvas rendering (DEVICE-PIXEL ONLY) — fixes Webflow rendering
+  // Canvas rendering
   // -------------------------
   const ctx = el.canvas.getContext("2d");
 
   function resizeCanvas() {
     const rect = el.chartFrame.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-
     const w = Math.max(1, Math.round(rect.width * dpr));
     const h = Math.max(1, Math.round(rect.height * dpr));
-
-    if (el.canvas.width !== w) el.canvas.width = w;
-    if (el.canvas.height !== h) el.canvas.height = h;
-
+    el.canvas.width = w;
+    el.canvas.height = h;
     return { w, h, dpr };
   }
 
@@ -433,17 +465,11 @@
     ctx.strokeStyle = "rgba(255,255,255,0.06)";
     const stepY = h / 7;
     for (let i = 1; i < 7; i++) {
-      ctx.beginPath();
-      ctx.moveTo(0, i * stepY);
-      ctx.lineTo(w, i * stepY);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i * stepY); ctx.lineTo(w, i * stepY); ctx.stroke();
     }
     const stepX = w / 10;
     for (let i = 1; i < 10; i++) {
-      ctx.beginPath();
-      ctx.moveTo(i * stepX, 0);
-      ctx.lineTo(i * stepX, h);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(i * stepX, 0); ctx.lineTo(i * stepX, h); ctx.stroke();
     }
   }
 
@@ -456,23 +482,34 @@
       if (v < mn) mn = v;
       if (v > mx) mx = v;
     }
-    if (!isFinite(mn) || !isFinite(mx) || mn === mx) {
-      mn = 0;
-      mx = isFinite(mx) && mx > 0 ? mx : 1;
-    }
+    if (!isFinite(mn) || !isFinite(mx) || mn === mx) { mn = 0; mx = isFinite(mx) && mx > 0 ? mx : 1; }
     return { mn, mx };
   }
 
   function plotLine(arr, upto, w, h, pad, stroke, range, alpha = 1) {
     const n = arr.length;
-    if (n < 2) return;
     const u = Math.max(0, Math.min(Math.floor(upto), n - 1));
+    if (n < 1) return;
 
     const x0 = pad, x1 = w - pad;
     const y0 = pad, y1 = h - pad;
-
     const mn = range.mn, mx = range.mx;
     const span = (mx - mn) || 1;
+
+    // If only one point is visible, draw a dot so Day 1 shows.
+    if (u === 0) {
+      const v = arr[0];
+      if (!isFinite(v)) return;
+      const x = x0;
+      const y = y1 - (y1 - y0) * ((v - mn) / span);
+      ctx.fillStyle = stroke;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      return;
+    }
 
     ctx.lineWidth = 2;
     ctx.strokeStyle = stroke;
@@ -531,7 +568,6 @@
     drawGrid(w, h);
 
     const pad = Math.round(Math.min(w, h) * 0.05);
-
     const mode = el.mode.value;
     const n = state.sim.dates.length;
 
@@ -555,23 +591,18 @@
     const date = state.sim.dates[i] || "—";
     const eq = state.sim.equityArr[i];
     const debt = state.sim.debtArr[i];
-    const ltv = state.sim.ltvArr[i];
-    const cover = state.sim.coverArr[i];
-    const taxRes = state.sim.taxReserveArr[i];
-    const billsP = state.sim.billsPaidArr[i];
 
     el.kDate.textContent = date;
     el.kEqCash.textContent = fmtUSD(eq);
     el.kEqMargin.textContent = fmtUSD(eq);
     el.kDebt.textContent = fmtUSD(debt);
-    el.kLTV.textContent = fmtPct(ltv);
-    el.kCover.textContent = isFinite(cover) ? (cover === Infinity ? "∞" : cover.toFixed(2) + "x") : "—";
-    el.kTax.textContent = fmtUSD(taxRes);
-    el.kBills.textContent = fmtUSD(billsP);
+    el.kLTV.textContent = fmtPct(state.sim.ltvArr[i]);
+    el.kCover.textContent = "—";
+    el.kTax.textContent = fmtUSD(state.sim.taxReserveArr[i]);
+    el.kBills.textContent = fmtUSD(state.sim.billsPaidArr[i]);
 
-    const totalDays = state.sim.dates.length;
     const label = state.meta.name || "Simulated Account";
-    el.vizDesc.textContent = `${label} • Day ${i + 1} / ${totalDays}`;
+    el.vizDesc.textContent = `${label} • Day ${i + 1} / ${state.sim.dates.length}`;
   }
 
   function tick(ts) {
@@ -594,65 +625,13 @@
     }
   }
 
-  function safeFileBase() {
-    const name = (state.meta?.name || "simulated-portfolio").trim() || "simulated-portfolio";
-    const clean = name.replace(/[^a-z0-9\-_]+/gi, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
-    const start = state.sim?.dates?.[0] || "";
-    const end = state.sim?.dates?.[state.sim.dates.length - 1] || "";
-    return `${clean}_${start}_to_${end}`.replace(/__+/g, "_");
-  }
-
-  function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  function downloadCanvasPNG() {
-    if (!state.built) { showAlert("Build a simulation first."); return; }
-    drawFrame(Math.floor(state.i));
-    el.canvas.toBlob((blob) => {
-      if (!blob) { showAlert("PNG export failed."); return; }
-      downloadBlob(blob, `${safeFileBase()}.png`);
-      log("Exported PNG.");
-    }, "image/png");
-  }
-
-  function downloadSimulationCSV() {
-    if (!state.built) { showAlert("Build a simulation first."); return; }
-
-    const dates = state.sim.dates;
-    const eq = state.sim.equityArr;
-    const debt = state.sim.debtArr;
-    const ltv = state.sim.ltvArr;
-
-    const header = ["date","equity","debt","ltv"].join(",");
-    const rows = [header];
-
-    for (let i = 0; i < dates.length; i++) {
-      rows.push([
-        dates[i],
-        isFinite(eq[i]) ? eq[i] : "",
-        isFinite(debt[i]) ? debt[i] : "",
-        isFinite(ltv[i]) ? ltv[i] : "",
-      ].join(","));
-    }
-
-    downloadBlob(new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" }), `${safeFileBase()}.csv`);
-    log("Exported CSV.");
-  }
-
   // -------------------------
   // Build simulation
   // -------------------------
   async function buildSimulation() {
-    el.log.textContent = "Building simulation...\n";
-    showAlert(null);
+    el.log.textContent = "";
+    log(`Loaded ${VERSION}`);
+    log(`Worker base: ${PRICE_PROXY_BASE}`);
 
     writeLegacyFromRows();
     previewAlloc();
@@ -666,37 +645,35 @@
     const rebalanceBuys = !!el.rebalance.checked;
 
     if (!startISO || !endISO || startISO > endISO) {
-      log("Invalid date range.");
       showAlert("Invalid date range.");
+      log("Invalid date range.");
       return;
     }
 
     const tickers = (el.legacyTickers.value || "").split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
     const weightsRaw = (el.legacyWeights.value || "").split(",").map(s => Number(String(s).trim()));
     let weights = normWeights(weightsRaw);
-
-    if (!tickers.length) {
-      log("Add at least one ticker.");
-      showAlert("Add at least one ticker.");
-      return;
-    }
+    if (!tickers.length) { showAlert("Add at least one ticker."); return; }
 
     const sum = weights.reduce((p,c)=>p+c,0);
     if (sum <= 0) weights = tickers.map(() => 1 / tickers.length);
 
-    log(`Loading prices for ${tickers.length} tickers...`);
+    log(`Loading prices for ${tickers.length} tickers... (${tickers.join(", ")})`);
     const series = await loadPricesForTickers(tickers, startISO, endISO);
+
+    log("Aligning timelines...");
     const aligned = alignTimeline(series);
 
     if (aligned.dates.length < 40) {
-      log("Not enough overlapping history across tickers. Try a wider range or fewer tickers.");
-      showAlert("Not enough overlapping history. Try a wider range or fewer tickers.");
+      showAlert("Not enough overlapping history. Try wider dates or fewer tickers.");
+      log("Not enough overlap.");
       return;
     }
 
     const prices = {};
     tickers.forEach((t) => (prices[t] = aligned.prices[t]));
 
+    log("Running simulation...");
     const sim = simulateCashOnly({
       dates: aligned.dates,
       prices,
@@ -727,36 +704,9 @@
   el.build.addEventListener("click", () => {
     buildSimulation().catch((e) => {
       console.error(e);
-      log(`Build failed: ${e?.message || e}`);
       showAlert(`Build failed: ${e?.message || e}`);
+      log(`Build failed: ${e?.message || e}`);
     });
-  });
-
-  el.reset.addEventListener("click", () => {
-    state.built = false;
-    state.playing = false;
-    state.i = 0;
-    state.sim = null;
-    state.meta = { name: "" };
-    showAlert(null);
-
-    setControlsBuilt(false);
-
-    el.kDate.textContent = "—";
-    el.kEqCash.textContent = "—";
-    el.kEqMargin.textContent = "—";
-    el.kDebt.textContent = "—";
-    el.kLTV.textContent = "—";
-    el.kCover.textContent = "—";
-    el.kTax.textContent = "—";
-    el.kBills.textContent = "—";
-
-    el.vizDesc.textContent = "Build a simulation to begin.";
-    el.badge.textContent = "SIMULATED";
-    el.log.textContent = "Ready.";
-
-    const { w, h } = resizeCanvas();
-    clearAll(w, h);
   });
 
   el.play.addEventListener("click", () => {
@@ -800,9 +750,6 @@
   });
   el.speedLabel.textContent = `${el.speed.value} d/s`;
 
-  el.dlPng.addEventListener("click", downloadCanvasPNG);
-  el.dlCsv.addEventListener("click", downloadSimulationCSV);
-
   window.addEventListener("resize", () => {
     if (state.built) drawFrame(Math.floor(state.i));
     else {
@@ -819,6 +766,10 @@
   if (el.endDate && !el.endDate.value) el.endDate.value = iso(end);
 
   initBuilder();
+
+  // Initial clear
   const { w, h } = resizeCanvas();
   clearAll(w, h);
+
+  log(`Loaded ${VERSION}`);
 })();
