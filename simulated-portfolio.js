@@ -2,7 +2,7 @@
   // =========================
   // HARD SINGLETON GUARD
   // =========================
-  const VERSION = "sim-portfolio v3.2 (full-history line + progress)";
+  const VERSION = "sim-portfolio v3.3 (animated play + overlay prompt)";
   if (window.__MICRODCA_SIM_PORTFOLIO_SINGLETON__) {
     console.warn("[MicroDCA Simulator] Duplicate load blocked:", VERSION);
     return;
@@ -106,6 +106,57 @@
   }
 
   // -------------------------
+  // "PRESS PLAY" OVERLAY (pure JS, no HTML changes needed)
+  // -------------------------
+  const overlay = (() => {
+    const wrap = el.chartFrame;
+    if (!wrap) return null;
+
+    // ensure positioning works
+    const cs = getComputedStyle(wrap);
+    if (cs.position === "static") wrap.style.position = "relative";
+
+    const o = document.createElement("div");
+    o.id = "spPlayOverlay";
+    o.style.position = "absolute";
+    o.style.inset = "0";
+    o.style.display = "none";
+    o.style.alignItems = "center";
+    o.style.justifyContent = "center";
+    o.style.pointerEvents = "none";
+    o.style.background = "linear-gradient(180deg, rgba(0,0,0,0.10), rgba(0,0,0,0.22))";
+    o.style.backdropFilter = "blur(1px)";
+    o.style.borderRadius = "12px";
+
+    o.innerHTML = `
+      <div style="
+        display:flex; flex-direction:column; gap:10px;
+        align-items:center; justify-content:center;
+        padding:14px 18px;
+        border:1px solid rgba(255,255,255,0.10);
+        background:rgba(0,0,0,0.55);
+        border-radius:14px;
+        box-shadow:0 14px 40px rgba(0,0,0,0.55);
+        text-align:center;
+        max-width:360px;
+      ">
+        <div style="font-weight:700; letter-spacing:.02em;">Press Play to animate</div>
+        <div style="color:rgba(245,245,245,0.70); font-size:12px; line-height:1.35;">
+          The gray curve shows the full backtest. Play draws the simulation forward day-by-day.
+        </div>
+      </div>
+    `;
+
+    wrap.appendChild(o);
+    return o;
+  })();
+
+  function showOverlay(on) {
+    if (!overlay) return;
+    overlay.style.display = on ? "flex" : "none";
+  }
+
+  // -------------------------
   // Asset builder
   // -------------------------
   const MAX_ASSETS = 10;
@@ -144,7 +195,6 @@
       weights.push(isFinite(w) ? w : 0);
     });
 
-    // Dedupe tickers to prevent weird double-loads
     const seen = new Set();
     const dt = [];
     const dw = [];
@@ -438,7 +488,7 @@
   }
 
   // -------------------------
-  // Canvas rendering (full-history + progress)
+  // Canvas rendering
   // -------------------------
   const ctx = el.canvas.getContext("2d");
 
@@ -525,12 +575,6 @@
     ctx.moveTo(x, pad);
     ctx.lineTo(x, h - pad);
     ctx.stroke();
-
-    // small head dot
-    ctx.fillStyle = "rgba(239,81,34,0.95)";
-    ctx.beginPath();
-    ctx.arc(x, pad + 10, 4, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   // -------------------------
@@ -543,6 +587,10 @@
     lastTs: 0,
     sim: null,
     meta: { name: "" },
+
+    // animation feel: easing the visible "draw" of the orange line
+    // (we draw to state.i, but we move state.i smoothly)
+    easing: 0.18,
   };
 
   function setControlsBuilt(on) {
@@ -563,13 +611,12 @@
     const mode = el.mode.value;
     const n = state.sim.dates.length;
 
-    // Full range computed once from full array
     const rEq = minMaxAll(state.sim.equityArr);
 
     if (mode === "equity") {
-      // full-history baseline
+      // full-history baseline (always visible)
       plotFull(state.sim.equityArr, w, h, pad, "rgba(245,245,245,0.22)", rEq, 1);
-      // progress highlight
+      // animated progress
       plotLine(state.sim.equityArr, i, w, h, pad, "rgba(239,81,34,0.95)", rEq, 1);
     } else if (mode === "debt") {
       const rD = minMaxAll(state.sim.debtArr);
@@ -578,28 +625,26 @@
     } else {
       plotFull(state.sim.equityArr, w, h, pad, "rgba(245,245,245,0.22)", rEq, 1);
       plotLine(state.sim.equityArr, i, w, h, pad, "rgba(239,81,34,0.95)", rEq, 1);
-
-      const rD = minMaxAll(state.sim.debtArr);
-      plotFull(state.sim.debtArr, w, h, pad, "rgba(245,245,245,0.10)", rD, 1);
     }
 
     drawCursor(i, w, h, pad, n);
 
-    const date = state.sim.dates[i] || "—";
-    const eq = state.sim.equityArr[i];
-    const debt = state.sim.debtArr[i];
+    const ii = Math.max(0, Math.min(Math.floor(i), n - 1));
+    const date = state.sim.dates[ii] || "—";
+    const eq = state.sim.equityArr[ii];
+    const debt = state.sim.debtArr[ii];
 
     el.kDate.textContent = date;
     el.kEqCash.textContent = fmtUSD(eq);
     el.kEqMargin.textContent = fmtUSD(eq);
     el.kDebt.textContent = fmtUSD(debt);
-    el.kLTV.textContent = fmtPct(state.sim.ltvArr[i]);
+    el.kLTV.textContent = fmtPct(state.sim.ltvArr[ii]);
     el.kCover.textContent = "—";
-    el.kTax.textContent = fmtUSD(state.sim.taxReserveArr[i]);
-    el.kBills.textContent = fmtUSD(state.sim.billsPaidArr[i]);
+    el.kTax.textContent = fmtUSD(state.sim.taxReserveArr[ii]);
+    el.kBills.textContent = fmtUSD(state.sim.billsPaidArr[ii]);
 
     const label = state.meta.name || "Simulated Account";
-    el.vizDesc.textContent = `${label} • Day ${i + 1} / ${state.sim.dates.length}`;
+    el.vizDesc.textContent = `${label} • Day ${ii + 1} / ${state.sim.dates.length}`;
   }
 
   function tick(ts) {
@@ -607,16 +652,21 @@
     const dt = (ts - state.lastTs) / 1000;
     state.lastTs = ts;
 
-    const speed = Number(el.speed.value);
-    const advance = speed * dt;
+    const speed = Number(el.speed.value); // days per second
+    const rawAdvance = speed * dt;
 
     const n = state.sim.dates.length;
-    state.i = Math.min(n - 1, state.i + advance);
-    drawFrame(Math.floor(state.i));
+    const target = Math.min(n - 1, state.i + rawAdvance);
+
+    // ease the animation so the orange line "draws" smoothly
+    state.i = state.i + (target - state.i) * (1 - Math.pow(1 - state.easing, 60 * dt));
+
+    drawFrame(state.i);
 
     if (Math.floor(state.i) >= n - 1) {
       state.playing = false;
       log("Reached end of simulation.");
+      showOverlay(false);
     } else {
       requestAnimationFrame(tick);
     }
@@ -656,10 +706,97 @@
     if (sum <= 0) weights = tickers.map(() => 1 / tickers.length);
 
     log(`Loading prices for ${tickers.length} tickers... (${tickers.join(", ")})`);
-    const series = await loadPricesForTickers(tickers, startISO, endISO);
+    const series = await (async () => {
+      const s = {};
+      for (const t of tickers) {
+        try {
+          log(`Loading price history for ${t}...`);
+          const rows = await (async () => {
+            const url = `${PRICE_PROXY_BASE}/api/prices?ticker=${encodeURIComponent(t)}`;
+            const ctrl = new AbortController();
+            const timeout = setTimeout(() => ctrl.abort(), 12000);
+            try {
+              const res = await fetch(url, { mode: "cors", signal: ctrl.signal });
+              if (!res.ok) throw new Error(`Worker fetch failed (${res.status})`);
+              const text = await res.text();
+              const parsed = (() => {
+                const lines = text.trim().split(/\r?\n/);
+                const out = [];
+                for (let i = 1; i < lines.length; i++) {
+                  const parts = lines[i].split(",");
+                  if (parts.length < 5) continue;
+                  const date = parts[0];
+                  const close = Number(parts[4]);
+                  if (!date || !isFinite(close)) continue;
+                  out.push({ date, close });
+                }
+                return out;
+              })();
+              if (!parsed.length) throw new Error("No data returned");
+              return parsed;
+            } finally {
+              clearTimeout(timeout);
+            }
+          })();
+
+          const filtered = rows.filter((r) => r.date >= startISO && r.date <= endISO && isFinite(r.close));
+          if (filtered.length < 30) throw new Error("Too few rows in range");
+          s[t] = filtered;
+          log(`Loaded ${filtered.length} rows for ${t}.`);
+        } catch (e) {
+          log(`Fetch failed for ${t} (${e?.name === "AbortError" ? "timeout" : (e?.message || "error")}). Using synthetic series.`);
+          s[t] = (function syntheticPrices(ticker, a, b) {
+            let seed = 0;
+            for (let i = 0; i < ticker.length; i++) seed = (seed * 31 + ticker.charCodeAt(i)) >>> 0;
+            const rand = () => ((seed = (1664525 * seed + 1013904223) >>> 0) / 4294967296);
+
+            const start = new Date(a + "T00:00:00Z");
+            const end = new Date(b + "T00:00:00Z");
+            const out = [];
+            let px = 60 + rand() * 180;
+
+            for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+              if (!isMarketDay(d)) continue;
+              const drift = 0.00025;
+              const vol = 0.012;
+              const shock = (rand() * 2 - 1) * vol;
+              px = Math.max(1, px * (1 + drift + shock));
+              out.push({ date: iso(d), close: px });
+            }
+            return out;
+          })(t, startISO, endISO);
+        }
+      }
+      return s;
+    })();
 
     log("Aligning timelines...");
-    const aligned = alignTimeline(series);
+    const aligned = (function alignTimeline(seriesByTicker) {
+      const tickers = Object.keys(seriesByTicker);
+      const maps = {};
+      tickers.forEach((t) => {
+        const m = new Map();
+        seriesByTicker[t].forEach((r) => m.set(r.date, r.close));
+        maps[t] = m;
+      });
+
+      let base = tickers[0];
+      for (const t of tickers) if (seriesByTicker[t].length < seriesByTicker[base].length) base = t;
+
+      const dates = [];
+      for (const r of seriesByTicker[base]) {
+        const d = r.date;
+        let ok = true;
+        for (const t of tickers) {
+          if (!maps[t].has(d)) { ok = false; break; }
+        }
+        if (ok) dates.push(d);
+      }
+
+      const prices = {};
+      tickers.forEach((t) => (prices[t] = dates.map((d) => maps[t].get(d))));
+      return { dates, prices, tickers };
+    })(series);
 
     if (aligned.dates.length < 40) {
       showAlert("Not enough overlapping history. Try wider dates or fewer tickers.");
@@ -692,6 +829,9 @@
     setControlsBuilt(true);
     drawFrame(0);
 
+    // Show overlay prompt after build; hide it on Play.
+    showOverlay(true);
+
     log(`Simulation built successfully (${aligned.dates.length} market days).`);
   }
 
@@ -713,6 +853,7 @@
     state.playing = true;
     state.lastTs = performance.now();
     log("Play.");
+    showOverlay(false);
     requestAnimationFrame(tick);
   });
 
@@ -720,26 +861,30 @@
     if (!state.built) return;
     state.playing = false;
     log("Pause.");
+    // if paused early, overlay can remind user
+    if (Math.floor(state.i) < state.sim.dates.length - 1) showOverlay(true);
   });
 
   el.step.addEventListener("click", () => {
     if (!state.built) return;
     state.playing = false;
+    showOverlay(false);
     const n = state.sim.dates.length;
     state.i = Math.min(n - 1, Math.floor(state.i) + 1);
-    drawFrame(Math.floor(state.i));
+    drawFrame(state.i);
   });
 
   el.toEnd.addEventListener("click", () => {
     if (!state.built) return;
     state.playing = false;
+    showOverlay(false);
     state.i = state.sim.dates.length - 1;
-    drawFrame(Math.floor(state.i));
+    drawFrame(state.i);
     log("Jumped to end.");
   });
 
   el.mode.addEventListener("change", () => {
-    if (state.built) drawFrame(Math.floor(state.i));
+    if (state.built) drawFrame(state.i);
   });
 
   el.speed.addEventListener("input", () => {
@@ -748,7 +893,7 @@
   el.speedLabel.textContent = `${el.speed.value} d/s`;
 
   window.addEventListener("resize", () => {
-    if (state.built) drawFrame(Math.floor(state.i));
+    if (state.built) drawFrame(state.i);
     else {
       const { w, h } = resizeCanvas();
       clearAll(w, h);
@@ -762,9 +907,11 @@
   if (el.startDate && !el.startDate.value) el.startDate.value = iso(start);
   if (el.endDate && !el.endDate.value) el.endDate.value = iso(end);
 
+  // Initial UI state
   initBuilder();
+  setControlsBuilt(false);
+  showOverlay(false);
 
-  // Initial clear
   const { w, h } = resizeCanvas();
   clearAll(w, h);
 
