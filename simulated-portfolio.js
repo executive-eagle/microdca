@@ -2,7 +2,7 @@
   // =========================
   // HARD SINGLETON GUARD
   // =========================
-  const VERSION = "sim-portfolio v3.4 (animated play + overlay + active buttons)";
+  const VERSION = "sim-portfolio v3.4 (mode toggle + active buttons + animated play + overlay prompt)";
   if (window.__MICRODCA_SIM_PORTFOLIO_SINGLETON__) {
     console.warn("[MicroDCA Simulator] Duplicate load blocked:", VERSION);
     return;
@@ -106,16 +106,12 @@
   }
 
   // -------------------------
-  // ACTIVE STATE FOR ANIMATION BUTTONS (adds .is-active to pressed/current)
+  // ACTIVE BUTTON UI (Play/Pause/Step/End)
   // -------------------------
-  const animButtons = [el.play, el.pause, el.step, el.toEnd].filter(Boolean);
-
-  function clearAnimActive() {
-    animButtons.forEach((b) => b.classList.remove("is-active"));
-  }
-  function setAnimActive(btnElOrNull) {
-    clearAnimActive();
-    if (btnElOrNull) btnElOrNull.classList.add("is-active");
+  function setActiveControl(which) {
+    const btns = [el.play, el.pause, el.step, el.toEnd].filter(Boolean);
+    btns.forEach((b) => b.classList.remove("is-active"));
+    if (which && el[which]) el[which].classList.add("is-active");
   }
 
   // -------------------------
@@ -168,6 +164,68 @@
     if (!overlay) return;
     overlay.style.display = on ? "flex" : "none";
   }
+
+  // -------------------------
+  // BEGINNER / ADVANCED TOGGLE (ROBUST)
+  // -------------------------
+  (function initModeToggle(){
+    const modebar = document.querySelector(".sim-modebar");
+    if (!modebar) return;
+
+    const btnBeginner =
+      modebar.querySelector('[data-mode="beginner"]') ||
+      modebar.querySelector("#spModeBeginner") ||
+      modebar.querySelector(".segmented button:nth-of-type(1), .segmented a:nth-of-type(1)");
+
+    const btnAdvanced =
+      modebar.querySelector('[data-mode="advanced"]') ||
+      modebar.querySelector("#spModeAdvanced") ||
+      modebar.querySelector(".segmented button:nth-of-type(2), .segmented a:nth-of-type(2)");
+
+    const advWrap = document.getElementById("spAdvancedWrap");
+
+    // Optional per-block IDs if you have them:
+    const advBlocks = [
+      advWrap,
+      document.getElementById("spTaxesBlock"),
+      document.getElementById("spIncomeBlock"),
+      document.getElementById("spMarginBlock"),
+    ].filter(Boolean);
+
+    function applyMode(mode){
+      const isBeginner = mode === "beginner";
+
+      if (btnBeginner) btnBeginner.setAttribute("aria-pressed", String(isBeginner));
+      if (btnAdvanced) btnAdvanced.setAttribute("aria-pressed", String(!isBeginner));
+
+      advBlocks.forEach((node) => node.classList.toggle("sim-hidden", isBeginner));
+
+      try { localStorage.setItem("microdca_sim_mode", mode); } catch(e){}
+    }
+
+    function wire(btn, mode){
+      if (!btn) return;
+
+      // Critical: prevent form submit / navigation
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        applyMode(mode);
+      }, { passive:false });
+
+      // If it's a <button> without type, force it to not submit
+      if (btn.tagName === "BUTTON" && !btn.getAttribute("type")) {
+        btn.setAttribute("type", "button");
+      }
+    }
+
+    wire(btnBeginner, "beginner");
+    wire(btnAdvanced, "advanced");
+
+    let saved = "beginner";
+    try { saved = localStorage.getItem("microdca_sim_mode") || "beginner"; } catch(e){}
+    applyMode(saved);
+  })();
 
   // -------------------------
   // Asset builder
@@ -672,13 +730,12 @@
 
     if (Math.floor(state.i) >= n - 1) {
       state.playing = false;
-      setAnimActive(null); // <- clears orange button when done
+      setActiveControl("pause");
       log("Reached end of simulation.");
       showOverlay(false);
-      return;
+    } else {
+      requestAnimationFrame(tick);
     }
-
-    requestAnimationFrame(tick);
   }
 
   // -------------------------
@@ -715,7 +772,24 @@
     if (sum <= 0) weights = tickers.map(() => 1 / tickers.length);
 
     log(`Loading prices for ${tickers.length} tickers... (${tickers.join(", ")})`);
-    const series = await loadPricesForTickers(tickers, startISO, endISO);
+
+    const series = await (async () => {
+      const s = {};
+      for (const t of tickers) {
+        try {
+          log(`Loading price history for ${t}...`);
+          const rows = await fetchDailyCloses(t);
+          const filtered = rows.filter((r) => r.date >= startISO && r.date <= endISO && isFinite(r.close));
+          if (filtered.length < 30) throw new Error("Too few rows in range");
+          s[t] = filtered;
+          log(`Loaded ${filtered.length} rows for ${t}.`);
+        } catch (e) {
+          log(`Fetch failed for ${t} (${e?.name === "AbortError" ? "timeout" : (e?.message || "error")}). Using synthetic series.`);
+          s[t] = syntheticPrices(t, startISO, endISO);
+        }
+      }
+      return s;
+    })();
 
     log("Aligning timelines...");
     const aligned = alignTimeline(series);
@@ -749,10 +823,9 @@
     state.lastTs = performance.now();
 
     setControlsBuilt(true);
-    setAnimActive(null);      // <- clears active state on new build
+    setActiveControl(null);
     drawFrame(0);
 
-    // Show overlay prompt after build; hide it on Play.
     showOverlay(true);
 
     log(`Simulation built successfully (${aligned.dates.length} market days).`);
@@ -762,6 +835,7 @@
   // Wiring
   // -------------------------
   el.build.addEventListener("click", () => {
+    setActiveControl(null);
     buildSimulation().catch((e) => {
       console.error(e);
       showAlert(`Build failed: ${e?.message || e}`);
@@ -775,7 +849,7 @@
     if (Math.floor(state.i) >= n - 1) state.i = 0;
     state.playing = true;
     state.lastTs = performance.now();
-    setAnimActive(el.play); // <- ACTIVE
+    setActiveControl("play");
     log("Play.");
     showOverlay(false);
     requestAnimationFrame(tick);
@@ -784,7 +858,7 @@
   el.pause.addEventListener("click", () => {
     if (!state.built) return;
     state.playing = false;
-    setAnimActive(el.pause); // <- ACTIVE
+    setActiveControl("pause");
     log("Pause.");
     if (Math.floor(state.i) < state.sim.dates.length - 1) showOverlay(true);
   });
@@ -792,7 +866,7 @@
   el.step.addEventListener("click", () => {
     if (!state.built) return;
     state.playing = false;
-    setAnimActive(el.step); // <- ACTIVE
+    setActiveControl("step");
     showOverlay(false);
     const n = state.sim.dates.length;
     state.i = Math.min(n - 1, Math.floor(state.i) + 1);
@@ -802,7 +876,7 @@
   el.toEnd.addEventListener("click", () => {
     if (!state.built) return;
     state.playing = false;
-    setAnimActive(el.toEnd); // <- ACTIVE
+    setActiveControl("toEnd");
     showOverlay(false);
     state.i = state.sim.dates.length - 1;
     drawFrame(state.i);
@@ -836,7 +910,7 @@
   // Initial UI state
   initBuilder();
   setControlsBuilt(false);
-  setAnimActive(null);
+  setActiveControl(null);
   showOverlay(false);
 
   const { w, h } = resizeCanvas();
