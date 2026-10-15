@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>MicroDCA · Bitcoin DCA Calculator</title>
+  <meta name="description" content="See what buying a little bitcoin every day, week or month would be worth today. Free bitcoin dollar cost averaging backtester." />
+  <meta name="theme-color" content="#000000" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+  <main>
+    <div class="layout">
+      <div>
+        <h1 class="title">Bitcoin DCA</h1>
+        <div class="big" id="big"></div>
+        <div class="change" id="change">&nbsp;</div>
+
+        <div class="chart-wrap"><canvas id="chart" aria-label="Value of your bitcoin over time"></canvas></div>
+        <div class="rangebar" id="range"><span class="spacer"></span><button class="act" id="lump-toggle">Compare lump sum</button></div>
+        <div class="legend" id="legend"></div>
+        <p class="sentence" id="sentence"></p>
+
+        <section class="block">
+          <h2>Key statistics</h2>
+          <div class="stats" id="stats"></div>
+        </section>
+
+        <section class="block">
+          <h2>DCA vs. lump sum</h2>
+          <div class="vs" id="vs"></div>
+          <p class="callout" id="verdict"></p>
+        </section>
+
+        <section class="block about">
+          <h2>About DCA</h2>
+          <p>Dollar cost averaging means buying a fixed dollar amount on a schedule (say $100 every week) no matter what the price is. When bitcoin is cheap, your $100 buys more. When it's expensive, it buys less. You never have to guess the right time to buy.</p>
+          <p>A lump sum means putting everything in on day one. It wins when prices mostly rise afterward, and it hurts more if you buy right before a drop.</p>
+        </section>
+      </div>
+
+      <aside class="side">
+        <div class="panel">
+          <h3>Buy Bitcoin</h3>
+          <div class="prow"><label for="amount">Amount</label><div class="ctl money"><input class="field" id="amount" type="number" inputmode="decimal" min="1" step="1" value="100" /></div></div>
+          <div class="prow"><label for="freq">Repeats</label><select class="field ctl" id="freq"><option value="daily">Every day</option><option value="weekly" selected>Every week</option><option value="monthly">Every month</option></select></div>
+          <div class="prow"><label for="start">Starting</label><input class="field ctl" id="start" type="date" /></div>
+          <div class="prow"><label for="end">Ending</label><input class="field ctl" id="end" type="date" /></div>
+          <div class="panel-foot" id="panel-foot">Uses real daily bitcoin closing prices</div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script type="module" src="/src/dca.js"></script>
+</body>
+</html>

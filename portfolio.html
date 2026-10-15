@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>MicroDCA · Live $10K Portfolio</title>
+  <meta name="description" content="A hypothetical $10,000 bitcoin and bitcoin-income portfolio started Oct 15, 2026. Watch dividends get reinvested every day." />
+  <meta name="theme-color" content="#000000" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+  <main>
+    <div class="layout">
+      <div>
+        <span class="live">Live</span>
+        <h1 class="title">$10K Portfolio</h1>
+        <div class="big" id="big"></div>
+        <div class="change" id="change">&nbsp;</div>
+
+        <div class="chart-wrap"><canvas id="chart" aria-label="Portfolio value: your money, plus dividends, plus market move"></canvas></div>
+        <div class="rangebar" id="range"><span class="spacer"></span><button class="act" id="play">Play time-lapse</button></div>
+        <div class="legend">
+          <span><i class="sw dash"></i>Your $10K</span>
+          <span><i class="sw" style="background:var(--reinvest)"></i>Dividends reinvested</span>
+          <span><i class="sw" style="background:var(--up)"></i>Market up</span>
+          <span><i class="sw" style="background:var(--down)"></i>Market down</span>
+        </div>
+        <p class="tl" id="tl">&nbsp;</p>
+
+        <section class="block">
+          <h2 id="split-h">Where your money came from</h2>
+          <div class="split">
+            <div class="split-bar"><i class="p" id="b-p"></i><i class="r" id="b-r"></i><i class="g" id="b-g"></i><i class="l" id="b-l"></i></div>
+            <div class="split-cols">
+              <div><div class="k"><span class="sw" style="background:var(--principal)"></span>Your money</div><div class="v" id="v-p"></div><div class="s">What you put in</div></div>
+              <div><div class="k"><span class="sw" style="background:var(--reinvest)"></span>Dividends</div><div class="v o" id="v-r"></div><div class="s">Paid to you, used to buy more</div></div>
+              <div><div class="k"><span class="sw" id="sw-g"></span>Market move</div><div class="v" id="v-g"></div><div class="s">Prices going up or down</div></div>
+            </div>
+            <p class="story" id="story"></p>
+          </div>
+        </section>
+
+        <section class="block">
+          <h2>Holdings</h2>
+          <div class="list" id="holdings"></div>
+          <div class="legend"><span><i class="sw" style="background:var(--principal)"></i>Shares bought with the original $10K</span><span><i class="sw" style="background:var(--reinvest)"></i>Shares bought with dividends</span></div>
+        </section>
+
+        <section class="block about">
+          <h2>About this portfolio</h2>
+          <p>On Oct 14, 2026 we pretended to put $10,000 into bitcoin and five income investments, buying at that day's closing prices. No real money is involved.</p>
+          <p>Every day, each income holding earns its yearly dividend ÷ 365 per share. That money is automatically used to buy more of the same holding at that day's price. More shares means a slightly bigger payout tomorrow. That's compounding. On days the market is closed, the last closing price is used.</p>
+          <p>Tap 1Y, 5Y or 10Y to watch a time-lapse of how dividends could stack up if every price stayed exactly where it is today. Real prices will move.</p>
+        </section>
+      </div>
+
+      <aside class="side">
+        <div class="earn">
+          <div class="k"><span id="earn-lbl">Dividends earned</span><span class="muted" id="earn-since">since Oct 15</span></div>
+          <div class="big" id="earn"></div>
+          <div class="rate" id="rate">&nbsp;</div>
+          <div class="drip"><i id="drip"></i></div>
+          <div class="rate" id="next">&nbsp;</div>
+        </div>
+        <div class="panel">
+          <h3>Settings</h3>
+          <div class="prow"><label for="sched" id="sched-lbl">Payouts</label><select class="field ctl" id="sched"><option value="daily">Daily (proposed)</option><option value="actual">Actual schedule</option></select></div>
+          <div class="prow" style="padding-bottom:0"><span class="lbl">Starting mix</span></div>
+          <div id="mix"></div>
+          <div class="panel-foot">Bought Oct 14, 2026 closes · $10,000</div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script type="module" src="/src/portfolio.js"></script>
+</body>
+</html>

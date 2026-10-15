@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>MicroDCA · Bitcoin Income Simulator</title>
+  <meta name="description" content="Simulate buying bitcoin income funds like STRC, STRF, STRK, STRD and BTCI, then split every payout between reinvesting, paying down margin, and bills." />
+  <meta name="theme-color" content="#000000" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+  <main>
+    <div class="layout">
+      <div>
+        <h1 class="title">Monthly income</h1>
+        <div class="big" id="big"></div>
+        <div class="change" id="change">&nbsp;</div>
+
+        <div class="chart-wrap"><canvas id="chart" aria-label="Payouts each month, colored by where they went"></canvas></div>
+        <div class="rangebar" id="view"><span class="spacer"></span></div>
+        <div class="legend" id="legend"></div>
+        <p class="sentence" id="sentence"></p>
+
+        <section class="block">
+          <h2>Key statistics</h2>
+          <div class="stats" id="stats"></div>
+        </section>
+
+        <section class="block">
+          <h2>Where your payouts go</h2>
+          <p class="sentence">Split every payout into buckets. Reinvest some, buy bitcoin or IBIT with some, pay down margin, cover bills. Then see how each piece did.</p>
+          <div class="links" id="route-presets"></div>
+          <div class="flow" id="flow"></div>
+          <div class="buckets" id="buckets"></div>
+          <div class="bucket-actions">
+            <button class="btn secondary sm" id="add-bucket">Add bucket</button>
+            <span class="mix-total" id="bucket-total"></span>
+          </div>
+          <div class="router-opts">
+            <div class="prow"><label for="route" id="route-lbl">Split payouts</label><select class="field ctl" id="route"><option value="paid">As they're paid</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></div>
+            <div class="prow"><label for="compare" id="compare-lbl">Compare to</label><select class="field ctl" id="compare"></select></div>
+            <div class="prow margin-opt"><label for="m-bal">Margin balance</label><div class="ctl money"><input class="field" id="m-bal" type="number" inputmode="decimal" min="0" step="100" /></div></div>
+            <div class="prow margin-opt"><label for="m-apr">Margin rate (APR)</label><div class="ctl pct-in"><input class="field" id="m-apr" type="number" inputmode="decimal" min="0" step="0.25" /></div></div>
+          </div>
+        </section>
+
+        <section class="block">
+          <h2>How each bucket did</h2>
+          <div class="rangebar" id="window"><span class="spacer"></span></div>
+          <div class="list" id="bucket-results"></div>
+          <p class="callout" id="opportunity"></p>
+        </section>
+
+        <section class="block" id="margin-block" hidden>
+          <h2>Margin loan</h2>
+          <div class="stats" id="margin-stats"></div>
+        </section>
+
+        <section class="block">
+          <h2>Holdings</h2>
+          <div class="list" id="holdings"></div>
+        </section>
+
+        <section class="block about">
+          <h2>About income investing</h2>
+          <p>These investments pay you cash, called a dividend or distribution, just for holding them. Strategy's preferred stocks pay a set yearly rate on a $100 "stated amount". BTCI is an ETF that sells options on bitcoin funds to generate monthly payouts.</p>
+          <p>Reinvesting means each payout buys more shares, so the next payout is a little bigger. That snowball is called compounding. Money you spend or use to pay down debt stops compounding. "Opportunity cost" shows what that money could have grown into if it had been invested instead.</p>
+          <p class="muted">A high yield isn't free money. Preferred dividends can be suspended (STRD's are non-cumulative and wouldn't be paid back), and BTCI's price has fallen as it paid out. Borrowing on margin can force selling in a downturn. Always check total value, not just income.</p>
+        </section>
+      </div>
+
+      <aside class="side">
+        <div class="panel">
+          <h3>Build your plan</h3>
+          <div class="prow"><label for="amount">Amount</label><div class="ctl money"><input class="field" id="amount" type="number" inputmode="decimal" min="1" step="1" value="500" /></div></div>
+          <div class="prow"><label for="freq">Repeats</label><select class="field ctl" id="freq"><option value="daily">Every day</option><option value="weekly">Every week</option><option value="monthly" selected>Every month</option></select></div>
+          <div class="prow"><label for="start">Starting</label><input class="field ctl" id="start" type="date" /></div>
+          <div class="prow"><label for="end">Ending</label><input class="field ctl" id="end" type="date" /></div>
+          <div class="prow"><label for="sched" id="sched-lbl">Schedule</label><select class="field ctl" id="sched"><option value="actual">Actual</option><option value="daily">Daily (proposed)</option></select></div>
+          <div class="prow" style="padding-bottom:0"><span class="lbl">Split each purchase</span></div>
+          <div class="links" id="presets"></div>
+          <div class="mix" id="mix"></div>
+          <div class="mix-total" id="mix-total"></div>
+          <div class="panel-foot">Uses real daily prices and real past payouts</div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script type="module" src="/src/income.js"></script>
+</body>
+</html>

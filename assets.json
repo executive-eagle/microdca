@@ -1,0 +1,246 @@
+{
+  "_how_to_edit": [
+    "This one file controls every asset on the site. Edit it, commit, push: the site and the daily price job pick it up.",
+    "To ADD an income fund: copy one block in \"income\", change ticker/yahoo/name/color/dividend fields. Prices + dividend history are fetched automatically.",
+    "To REMOVE one: delete its block (and remove it from income_presets / portfolio.allocation if it's listed there).",
+    "To add a NON-income asset you can route payouts into (like IBIT or MSTR): add it to \"growth\".",
+    "annual_dividend: dollars per share per year, OR \"ttm\" to use the trailing-12-month payouts from the price data.",
+    "schedule: semimonthly | monthly | quarterly | daily. pay_day = day of month it pays (default 15). quarter_months = which months quarterly payers pay.",
+    "daily_proposed_from: only for funds that may switch to daily payouts. Used by the 'Daily (proposed)' toggle. Omit otherwise.",
+    "history_from: how far back to download prices (YYYY-MM-DD).",
+    "payout_presets: ready-made ways to split payouts. kind = same (buy more of the fund that paid) | buy (needs target ticker) | margin | bills | cash."
+  ],
+  "bitcoin": {
+    "ticker": "BTC",
+    "yahoo": "BTC-USD",
+    "name": "Bitcoin",
+    "color": "#F7931A",
+    "history_from": "2014-09-01"
+  },
+  "income": [
+    {
+      "ticker": "STRC",
+      "yahoo": "STRC",
+      "name": "Strategy Stretch Preferred",
+      "color": "#5B8DEF",
+      "annual_dividend": 12.0,
+      "schedule": "semimonthly",
+      "daily_proposed_from": "2026-11-02",
+      "about": "Variable-rate preferred stock from Strategy. Currently pays 12.00% a year on a $100 stated amount ($12/yr), twice a month ($0.50 each).",
+      "history_from": "2025-01-01"
+    },
+    {
+      "ticker": "STRF",
+      "yahoo": "STRF",
+      "name": "Strategy Strife Preferred",
+      "color": "#2BB673",
+      "annual_dividend": 10.0,
+      "schedule": "quarterly",
+      "quarter_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "daily_proposed_from": "2027-01-04",
+      "about": "Fixed 10% on $100 ($10/yr), paid quarterly. Cumulative: skipped dividends are still owed. The most senior of Strategy's preferreds.",
+      "history_from": "2025-01-01"
+    },
+    {
+      "ticker": "STRK",
+      "yahoo": "STRK",
+      "name": "Strategy Strike Preferred",
+      "color": "#A779E9",
+      "annual_dividend": 8.0,
+      "schedule": "quarterly",
+      "quarter_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "daily_proposed_from": "2027-01-04",
+      "about": "Fixed 8% on $100 ($8/yr), paid quarterly, cumulative. Convertible: 10 STRK can become 1 MSTR share.",
+      "history_from": "2025-01-01"
+    },
+    {
+      "ticker": "STRD",
+      "yahoo": "STRD",
+      "name": "Strategy Stride Preferred",
+      "color": "#E5534B",
+      "annual_dividend": 10.0,
+      "schedule": "quarterly",
+      "quarter_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "daily_proposed_from": "2027-01-04",
+      "about": "Fixed 10% on $100 ($10/yr), paid quarterly. NON-cumulative: if Strategy skips a payment, it never has to make it up. Least senior.",
+      "history_from": "2025-01-01"
+    },
+    {
+      "ticker": "BTCI",
+      "yahoo": "BTCI",
+      "name": "NEOS Bitcoin High Income ETF",
+      "color": "#E3B341",
+      "annual_dividend": 8.6208,
+      "schedule": "monthly",
+      "pay_day": 15,
+      "about": "Covered-call ETF that sells options on bitcoin funds for monthly income. Recent distribution rate ~25\u201328% (last payout $0.7184 on Sept 30, 2026), mostly return of capital. 0.99% expense ratio. Upside is capped and the price can erode over time.",
+      "history_from": "2024-10-01"
+    }
+  ],
+  "growth": [
+    {
+      "ticker": "IBIT",
+      "yahoo": "IBIT",
+      "name": "iShares Bitcoin Trust ETF",
+      "color": "#9AA4AE",
+      "about": "Spot bitcoin ETF from BlackRock. Tracks the bitcoin price, pays no dividend.",
+      "history_from": "2024-01-01"
+    },
+    {
+      "ticker": "MSTR",
+      "yahoo": "MSTR",
+      "name": "Strategy common stock",
+      "color": "#C9CED3",
+      "about": "Strategy's common stock. Pays no dividend; moves with bitcoin and Strategy's own decisions.",
+      "history_from": "2020-01-01"
+    }
+  ],
+  "income_presets": [
+    {
+      "label": "Even split",
+      "mix": {
+        "STRC": 20,
+        "STRF": 20,
+        "STRK": 20,
+        "STRD": 20,
+        "BTCI": 20
+      }
+    },
+    {
+      "label": "Strategy preferreds",
+      "mix": {
+        "STRC": 40,
+        "STRF": 25,
+        "STRK": 20,
+        "STRD": 15
+      }
+    },
+    {
+      "label": "All STRC",
+      "mix": {
+        "STRC": 100
+      }
+    },
+    {
+      "label": "All BTCI",
+      "mix": {
+        "BTCI": 100
+      }
+    }
+  ],
+  "payout_presets": [
+    {
+      "label": "Reinvest all",
+      "buckets": [
+        {
+          "kind": "same",
+          "pct": 100
+        }
+      ]
+    },
+    {
+      "label": "Stack sats",
+      "buckets": [
+        {
+          "kind": "buy",
+          "target": "BTC",
+          "pct": 100
+        }
+      ]
+    },
+    {
+      "label": "Mix it up",
+      "buckets": [
+        {
+          "kind": "same",
+          "pct": 40
+        },
+        {
+          "kind": "margin",
+          "pct": 10
+        },
+        {
+          "kind": "buy",
+          "target": "STRC",
+          "pct": 10
+        },
+        {
+          "kind": "buy",
+          "target": "BTCI",
+          "pct": 10
+        },
+        {
+          "kind": "buy",
+          "target": "IBIT",
+          "pct": 10
+        },
+        {
+          "kind": "bills",
+          "pct": 20
+        }
+      ]
+    },
+    {
+      "label": "Pay off margin",
+      "buckets": [
+        {
+          "kind": "margin",
+          "pct": 80
+        },
+        {
+          "kind": "same",
+          "pct": 20
+        }
+      ]
+    },
+    {
+      "label": "Live off it",
+      "buckets": [
+        {
+          "kind": "bills",
+          "pct": 80
+        },
+        {
+          "kind": "cash",
+          "pct": 20
+        }
+      ]
+    }
+  ],
+  "portfolio": {
+    "start_value": 10000,
+    "inception": "2026-10-15",
+    "price_date": "2026-10-14",
+    "allocation": {
+      "BTC": 40,
+      "STRC": 20,
+      "STRF": 15,
+      "STRK": 10,
+      "STRD": 5,
+      "BTCI": 10
+    },
+    "start_prices": {
+      "BTC": 83100,
+      "STRC": 99.83,
+      "STRF": 103.34,
+      "STRK": 73.62,
+      "STRD": 71.64,
+      "BTCI": 33.07
+    }
+  }
+}
