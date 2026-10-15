@@ -1,24 +1,30 @@
 // MicroDCA live quotes: fetches real-time prices from Yahoo Finance for the tickers the site lists,
 // caches them for 15s at Cloudflare's edge, and serves them with CORS so the static site can read them.
 // GET /quotes → { t, quotes: { STRC: { price, prevClose, time, date, state }, ... } }
+// GET /chart?range=1d|1mo&symbols=BTC,STRC → { t, range, series: { BTC: [[unixSec, close], ...] } }
+//   1d = last 2 days of 5-minute bars (cached 60s), 1mo = last month of hourly bars (cached 15 min)
 
 const QUOTE_TTL = 15; // seconds
 const TICKER_TTL = 600;
-const FALLBACK_TICKERS = { STRC: 'STRC', STRF: 'STRF', STRK: 'STRK', STRD: 'STRD', BTCI: 'BTCI', IBIT: 'IBIT', MSTR: 'MSTR' };
+const CHART = { '1d': { range: '2d', interval: '5m', ttl: 60 }, '1mo': { range: '1mo', interval: '1h', ttl: 900 } };
+const FALLBACK_TICKERS = { BTC: 'BTC-USD', STRC: 'STRC', STRF: 'STRF', STRK: 'STRK', STRD: 'STRD', BTCI: 'BTCI', IBIT: 'IBIT', MSTR: 'MSTR' };
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const cors = corsHeaders(request, env);
     if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
-    if (url.pathname !== '/quotes') return json({ ok: true, endpoints: ['/quotes'] }, cors, 60);
+    if (url.pathname === '/chart') return chart(url, env, ctx, cors);
+    if (url.pathname !== '/quotes') return json({ ok: true, endpoints: ['/quotes', '/chart'] }, cors, 60);
 
     const cache = caches.default;
     const key = new Request(`${url.origin}/quotes`, { method: 'GET' });
     const hit = await cache.match(key);
     if (hit) return withCors(hit, cors);
 
-    const tickers = await loadTickers(env, ctx);
+    const all = await loadTickers(env, ctx);
+    // bitcoin is priced live in the browser; quotes cover the stocks/ETFs
+    const tickers = Object.fromEntries(Object.entries(all).filter(([t]) => t !== 'BTC'));
     const entries = await Promise.all(Object.entries(tickers).map(async ([t, y]) => [t, await quote(y).catch(() => null)]));
     const quotes = Object.fromEntries(entries.filter(([, q]) => q));
     const res = json({ t: new Date().toISOString(), quotes }, {}, QUOTE_TTL);
@@ -36,13 +42,39 @@ async function loadTickers(env, ctx) {
     const r = await fetch(env.TICKERS_URL, { cf: { cacheTtl: TICKER_TTL } });
     if (!r.ok) throw new Error(r.status);
     const list = await r.json();
-    // only plain ticker symbols, BTC excluded (the site prices bitcoin itself)
-    const clean = Object.fromEntries(Object.entries(list).filter(([t, y]) => t !== 'BTC' && /^[A-Z0-9.^=-]{1,12}$/.test(y)).slice(0, 40));
+    // only plain ticker symbols, capped well under the free plan's 50 subrequests per call
+    const clean = Object.fromEntries(Object.entries(list).filter(([, y]) => /^[A-Z0-9.^=-]{1,12}$/.test(y)).slice(0, 40));
     ctx.waitUntil(cache.put(key, new Response(JSON.stringify(clean), { headers: { 'Cache-Control': `max-age=${TICKER_TTL}` } })));
     return clean;
   } catch {
     return FALLBACK_TICKERS;
   }
+}
+
+async function chart(url, env, ctx, cors) {
+  const r = url.searchParams.get('range') || '1d';
+  const cfg = CHART[r];
+  if (!cfg) return json({ error: 'range must be 1d or 1mo' }, cors, 60);
+  const all = await loadTickers(env, ctx);
+  const want = (url.searchParams.get('symbols') || Object.keys(all).join(',')).split(',').map((s) => s.trim().toUpperCase()).filter((t) => all[t]).sort();
+  const cache = caches.default;
+  const key = new Request(`${url.origin}/chart?range=${r}&symbols=${want.join(',')}`);
+  const hit = await cache.match(key);
+  if (hit) return withCors(hit, cors);
+  const entries = await Promise.all(want.map(async (t) => {
+    try {
+      const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(all[t])}?range=${cfg.range}&interval=${cfg.interval}`, { headers: { 'User-Agent': 'Mozilla/5.0 (MicroDCA charts)' } });
+      if (!res.ok) return [t, null];
+      const d = (await res.json()).chart.result[0];
+      const c = d.indicators.quote[0].close;
+      const dp = t === 'BTC' ? 2 : 4;
+      return [t, (d.timestamp || []).map((ts, i) => (c[i] == null ? null : [ts, +c[i].toFixed(dp)])).filter(Boolean)];
+    } catch { return [t, null]; }
+  }));
+  const series = Object.fromEntries(entries.filter(([, v]) => v && v.length));
+  const res = json({ t: new Date().toISOString(), range: r, series }, {}, cfg.ttl);
+  if (Object.keys(series).length) ctx.waitUntil(cache.put(key, res.clone()));
+  return withCors(res, cors);
 }
 
 async function quote(symbol) {

@@ -179,6 +179,7 @@ input[type='range'] { width: 100%; accent-color: var(--brand); height: 18px; }
 .links { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 0 4px; }
 .links button { background: none; border: 0; padding: 4px 0; color: var(--brand); font-weight: 600; font-size: 13px; cursor: pointer; }
 .links button.active { color: var(--fg); }
+.links.plan-len { justify-content: flex-end; padding: 0 0 6px; }
 
 /* ---------- list rows (watchlist style) ---------- */
 .list { display: grid; }

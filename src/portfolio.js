@@ -1,5 +1,5 @@
 import {
-  mountLayout, revealSections, drawInFor, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, eachDay, addDays, lineChart, rangeBar, setTrend, roller, downsample, sparkline, rgba,
+  mountLayout, revealSections, drawInFor, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, intraday, prettyTime, toISO, eachDay, addDays, lineChart, rangeBar, setTrend, roller, downsample, sparkline, rgba,
   usd, usd0, pct, num, btc, term, changeLine, signClass, prettyDate, todayISO, daysBetween, css, onTheme,
 } from './common.js';
 import { incomeAssets, colorOf, isPayDay, PORTFOLIO, BITCOIN, LIVE_QUOTES_URL } from './config.js';
@@ -13,7 +13,7 @@ const ASSETS = Object.keys(PORTFOLIO.allocation);
 const START = PORTFOLIO.startValue;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-let A = {}, INCOME = [], prices = {}, sched = 'daily', horizon = 'NOW', chart, base, playing = null, liveBtc = null, animateNext = true;
+let A = {}, INCOME = [], prices = {}, sched = 'daily', horizon = '1D', bars = null, dayCache = null, chart, base, playing = null, liveBtc = null, animateNext = true;
 
 /* ================= engine ================= */
 const priceOn = (t, d) => (t === BITCOIN.ticker && liveBtc && d >= todayISO() ? liveBtc : prices[t](d));
@@ -68,7 +68,7 @@ function projection() {
   return simulate(addDays(base.today, Math.round(365.25 * years)));
 }
 function rowsForView() {
-  if (horizon !== 'NOW') return projection();
+  if (!isLiveView()) return projection();
   const v = live();
   return [...base.rows, { d: base.today, value: v.value, earned: v.earned, shares: base.last.shares, reinv: base.last.reinv, px: base.px }];
 }
@@ -176,6 +176,89 @@ function pulse(rowEl, text) {
   plus._t = setTimeout(() => plus.classList.remove('show'), 700);
 }
 
+/* ================= 1D intraday ================= */
+const isLiveView = () => horizon === '1D' || horizon === 'NOW';
+const BOUGHT_AT = Date.parse(PORTFOLIO.priceDate + 'T20:00:00Z'); // 4pm ET close the portfolio was bought at
+
+/** Portfolio value every 5 minutes over the last 24h (or since buying), from intraday prices of every holding. */
+function dayRows() {
+  if (!bars?.BTC || !base) return null;
+  const now = Date.now();
+  const from = Math.max(now - 864e5, BOUGHT_AT);
+  const grid = bars.BTC.map(([t]) => t).filter((t) => t >= from);
+  if (grid.length < 2) return null;
+  const v = live();
+  const shares = base.last.shares;
+  const idx = Object.fromEntries(ASSETS.map((a) => [a, 0]));
+  const rows = grid.map((t) => {
+    let val = 0;
+    for (const a of ASSETS) {
+      const b = bars[a] || [];
+      while (idx[a] + 1 < b.length && b[idx[a] + 1][0] <= t) idx[a]++;
+      // before a stock's first bar in the window (overnight), use its last daily close
+      const p = b.length && b[idx[a]][0] <= t ? b[idx[a]][1] : prices[a](toISO(new Date(t - 864e5)));
+      val += shares[a] * p;
+    }
+    // dividends accrue smoothly through the day
+    return { t, value: val + base.last.pending + Math.max(0, v.partial - (base.rate * (now - t)) / 1000) };
+  });
+  rows.push({ t: now, value: v.value });
+  return { rows, sinceBuy: from === BOUGHT_AT };
+}
+
+function dayHeadline(value, at = null) {
+  const d = dayCache;
+  if (!d) return headline(value, 'since Oct 15, 2026');
+  const start = d.rows[0].value;
+  big(usd(value));
+  changeLine($('change'), value - start, start, at ? prettyTime(at, 'day') : d.sinceBuy ? 'since Oct 14 close' : 'Past day');
+  setTrend(value >= start);
+}
+
+function drawDay() {
+  const d = (dayCache = dayRows());
+  if (!d) return draw(rowsForView()); // intraday unavailable → fall back to the daily chart
+  const rows = d.rows;
+  const up = rows.at(-1).value >= rows[0].value;
+  const color = up ? css('--up') : css('--down');
+  const key = '1D' + rows.length;
+  if (chart && chart.$key === key) {
+    chart.data.datasets[0].data = rows.map((r) => r.value);
+    chart.data.datasets[0].borderColor = color;
+    chart.update('none');
+    return;
+  }
+  const drawIn = drawInFor(chart, animateNext);
+  animateNext = false;
+  chart?.destroy();
+  const lo = Math.min(...rows.map((r) => r.value)), hi = Math.max(...rows.map((r) => r.value));
+  const pad = Math.max((hi - lo) * 0.12, START * 0.0015);
+  chart = lineChart($('chart'), {
+    labels: rows.map((_, i) => i),
+    yRange: { min: lo - pad, max: hi + pad },
+    drawIn,
+    pulse: 0,
+    dateLabel: (i) => prettyTime(rows[i].t, 'day'),
+    datasets: [
+      { label: 'Value', data: rows.map((r) => r.value), color },
+      { label: 'Start', data: rows.map(() => rows[0].value), color: css('--muted'), dashed: true },
+    ],
+    onScrub: (i) => {
+      if (i == null) return refresh(true);
+      dayHeadline(rows[i].value, i === rows.length - 1 ? null : rows[i].t);
+    },
+  });
+  chart.$key = key;
+}
+
+const LEGEND_LAYERS = document.querySelector('.legend')?.innerHTML;
+function setLegend() {
+  const el = document.querySelector('.legend');
+  el.innerHTML = horizon === '1D'
+    ? '<span><i class="sw" style="background:var(--accent, var(--up))"></i>Portfolio value</span><span><i class="sw dash"></i>Value at start of period</span><span class="muted">· every 5 min, live</span>'
+    : LEGEND_LAYERS;
+}
+
 /* ================= chart ================= */
 function draw(rows, upto = rows.length - 1) {
   const pts = rows.length > 400 ? downsample(rows, 365) : rows;
@@ -202,7 +285,7 @@ function draw(rows, upto = rows.length - 1) {
     labels: pts.map((r) => r.d),
     yRange: { min: lo - pad, max: hi + pad },
     drawIn,
-    pulse: horizon === 'NOW' ? 2 : null,
+    pulse: isLiveView() ? 2 : null,
     dateLabel: (i) => prettyDate(pts[i].d),
     datasets: [
       { label: 'Your $10K', data: pts.map(() => START), color: css('--muted'), dashed: true, order: 3 },
@@ -225,7 +308,7 @@ function play() {
   stop(false);
   const rows = rowsForView();
   const n = rows.length;
-  const ms = horizon === 'NOW' ? 1800 : horizon === '1Y' ? 5000 : 7500;
+  const ms = isLiveView() ? 1800 : horizon === '1Y' ? 5000 : 7500;
   const t0 = performance.now();
   let prev = rows[0], lastPulse = 0;
   $('play').textContent = 'Pause';
@@ -256,7 +339,11 @@ function stop(restore = true) {
 /* ================= live loop ================= */
 function refresh(force) {
   if (playing) return;
-  if (horizon === 'NOW') {
+  if (horizon === '1D') {
+    const v = live();
+    dayHeadline(v.value);
+    split(v.value, v.earned);
+  } else if (horizon === 'NOW') {
     const v = live();
     headline(v.value, 'since Oct 15, 2026');
     split(v.value, v.earned);
@@ -285,9 +372,12 @@ function rebuild() {
   $('rate').innerHTML = `${usd(base.rate * 86400)}/day · ${usd(base.rate * 3600, 4)}/hr · ${usd(base.rate * 86400 * 365)}/yr`;
   $('earn-since').textContent = 'since Oct 15';
   holdings(base.last, base.px);
-  draw(rowsForView());
+  setLegend();
+  if (horizon === '1D' && !playing) drawDay(); else draw(rowsForView());
   refresh(true);
-  $('tl').innerHTML = horizon === 'NOW'
+  $('tl').innerHTML = horizon === '1D'
+    ? `Portfolio value every 5 minutes · ${dayCache?.sinceBuy ? 'since buying at the Oct 14 close' : 'past 24 hours'} · stock prices only move while the market is open`
+    : horizon === 'NOW'
     ? `Day <b>${Math.max(1, daysBetween(PORTFOLIO.priceDate, base.today))}</b> · prices update every 15 seconds while the market is open`
     : 'Projection holds every price flat at today\'s level, so only reinvested dividends grow it. Press play to watch.';
 }
@@ -310,7 +400,7 @@ function marketBadge(live) {
     $('sched-lbl').innerHTML = term('Payouts', 'Daily (proposed): Strategy shareholders vote Oct 28, 2026 on paying every calendar day (STRC from Nov 2, 2026; STRF, STRK, STRD from Jan 4, 2027). Every holding here reinvests daily. Actual schedule: money still accrues daily, but is only reinvested on real pay dates (STRC twice a month, STRF/STRK/STRD quarterly, BTCI monthly).');
     $('earn-lbl').innerHTML = term('Dividends earned', 'Each income holding earns its yearly dividend ÷ 365 per share every day. This counter adds it up second by second.');
     $('split-h').innerHTML = `Where your ${term('money', 'Your money = the $10K you started with. Dividends = income paid to you and reinvested. Market move = how much prices have gone up or down.')} came from`;
-    rangeBar($('range'), [['NOW', 'Live'], ['1Y', '1Y'], ['5Y', '5Y'], ['10Y', '10Y']], 'NOW', (h) => { horizon = h; animateNext = h === 'NOW'; stop(); if (h !== 'NOW') play(); });
+    rangeBar($('range'), [['1D', '1D'], ['NOW', 'All'], ['1Y', '1Y'], ['5Y', '5Y'], ['10Y', '10Y']], horizon, (h) => { horizon = h; animateNext = isLiveView(); stop(); if (!isLiveView()) play(); });
     $('play').onclick = () => (playing ? stop() : play());
     $('sched').onchange = (e) => { sched = e.target.value; animateNext = true; stop(); };
     rebuild();
@@ -321,7 +411,7 @@ function marketBadge(live) {
     // every 2s: dividends drip off the counter; holdings take turns showing what they earn per minute
     let turn = 0;
     setInterval(() => {
-      if (playing || horizon !== 'NOW' || !base) return;
+      if (playing || !isLiveView() || !base) return;
       drop(base.rate * 2);
       const t = INCOME[turn++ % INCOME.length];
       const perHr = (base.last.shares[t] * A[t].annual) / 365 / 24;
@@ -333,8 +423,9 @@ function marketBadge(live) {
     const pull = async () => {
       clearTimeout(timer);
       if (document.hidden) return;
-      const [p, live] = await Promise.all([liveBTC(), liveQuotes(LIVE_QUOTES_URL)]);
+      const [p, live, b] = await Promise.all([liveBTC(), liveQuotes(LIVE_QUOTES_URL), intraday(LIVE_QUOTES_URL, '1d', ASSETS)]);
       if (p) liveBtc = p;
+      if (b) bars = b;
       applyQuotes(prices, live);
       marketBadge(live);
       if (!playing) rebuild();
@@ -347,4 +438,4 @@ function marketBadge(live) {
     console.error(err);
   }
 })();
-onTheme(() => { if (base && !playing) { chart?.destroy(); chart = null; draw(rowsForView()); holdings(base.last, base.px); } });
+onTheme(() => { if (base && !playing) { chart?.destroy(); chart = null; if (horizon === '1D') drawDay(); else draw(rowsForView()); holdings(base.last, base.px); } });

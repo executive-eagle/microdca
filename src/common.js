@@ -193,6 +193,34 @@ export async function liveQuotes(url) {
   } catch { return null; }
 }
 
+/**
+ * Intraday bars from the worker: range '1d' (5-minute, last 2 days) or '1mo' (hourly, last month).
+ * Returns { TICKER: [[ms, close], ...] } or null. Cached in the page for a minute.
+ */
+const intradayCache = new Map();
+export async function intraday(quotesUrl, range, symbols) {
+  if (!quotesUrl) return null;
+  const key = range + ':' + symbols.join(',');
+  const c = intradayCache.get(key);
+  if (c && Date.now() - c.t < 60_000) return c.v;
+  try {
+    const r = await fetch(quotesUrl.replace(/\/quotes$/, '/chart') + `?range=${range}&symbols=${symbols.join(',')}`);
+    if (!r.ok) return null;
+    const { series } = await r.json();
+    const v = Object.fromEntries(Object.entries(series).map(([t, rows]) => [t, rows.map(([s, p]) => [s * 1000, p])]));
+    intradayCache.set(key, { t: Date.now(), v });
+    return v;
+  } catch { return null; }
+}
+
+/** "3:45 PM" for today, "Mon 3:45 PM" within a week, "Oct 3, 3 PM" otherwise. */
+export function prettyTime(ms, span = 'day') {
+  const d = new Date(ms);
+  if (span === 'day') return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (span === 'week') return d.toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric' });
+}
+
 /** Puts each live quote into its price series as today's (forward-filled) close. */
 export function applyQuotes(prices, live) {
   if (!live) return;
@@ -329,6 +357,7 @@ export function lineChart(canvas, { labels, datasets, onScrub, dateLabel, yRange
   });
   chart.$dateLabel = dateLabel;
   chart.$pulse = pulse;
+  chart.draw(); // first paint happened inside the constructor, before these were set
   // drawIn: true starts the draw-in; a number (0–1) continues one a previous chart had in progress
   if (drawIn !== false && drawIn != null && !reduceMotion) {
     const from = drawIn === true ? 0 : +drawIn;
