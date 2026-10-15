@@ -475,3 +475,23 @@ html, body { overflow-x: clip; }
   .lbl-short { display: inline; }
 }
 @media (max-width: 380px) { .rangebar { gap: 11px; } .rangebar button { font-size: 12.5px; } }
+
+/* ================= sell vs. income ================= */
+.versus { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 22px; }
+@media (max-width: 640px) { .versus { grid-template-columns: 1fr; } }
+.vcard { border: 1px solid var(--line); border-radius: 10px; padding: 18px 18px 8px; }
+#card-b { border-color: rgba(247, 147, 26, 0.55); }
+.vhead { font-weight: 600; font-size: 17px; display: flex; align-items: center; gap: 8px; }
+.vtag { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #000; }
+.vtag.a { background: #9AA4AE; }
+.vtag.b { background: var(--brand); }
+.vdesc { font-size: 13px; color: var(--muted); margin: 6px 0 8px; }
+.vrow { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.vrow .k { color: var(--fg-2); flex: none; }
+.vrow .v { text-align: right; font-weight: 500; }
+.vrow .v b { font-size: 16px; }
+.warn { color: #D6A12B; }
+
+.path.wide { margin-top: 16px; min-height: 0 !important; }
+@media (max-width: 760px) { .tabbar a { font-size: 10px; } }
+@media (max-width: 960px) { .layout.inputs-first > .side { order: -1; } }

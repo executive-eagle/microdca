@@ -12,6 +12,7 @@ export default defineConfig({
         income: resolve(__dirname, 'income.html'),
         portfolio: resolve(__dirname, 'portfolio.html'),
         learn: resolve(__dirname, 'learn.html'),
+        compare: resolve(__dirname, 'compare.html'),
       },
     },
   },

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>MicroDCA · Sell bitcoin vs. live off income</title>
+  <meta name="description" content="Compare selling bitcoin to pay your bills with living off income funds and keeping your bitcoin, including US taxes and borrowing, on real prices." />
+  <meta name="theme-color" content="#000000" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:site" content="@MicroDCA3" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+  <main>
+    <div class="layout inputs-first">
+      <div>
+        <h1 class="title">Sell bitcoin, or live off income?</h1>
+        <p class="sentence">Two ways to pay your bills from the same starting point, replayed on real prices, including the 2026 crash.</p>
+
+        <div class="versus" id="versus">
+          <div class="vcard" id="card-a">
+            <div class="vhead"><span class="vtag a">A</span> Sell bitcoin</div>
+            <p class="vdesc">Extra savings buy more bitcoin. Every month you sell enough bitcoin to pay the bills and the tax.</p>
+            <div class="vrows" id="rows-a"></div>
+          </div>
+          <div class="vcard" id="card-b">
+            <div class="vhead"><span class="vtag b">B</span> Live off income</div>
+            <p class="vdesc">Your bitcoin stays put. Extra savings buy income funds whose payouts pay the bills. Short? Borrow a little.</p>
+            <div class="vrows" id="rows-b"></div>
+          </div>
+        </div>
+        <p class="summary" id="summary"></p>
+
+        <div class="chart-wrap"><canvas id="chart" aria-label="Strategy A versus strategy B over time"></canvas></div>
+        <div class="rangebar" id="view"><span class="spacer"></span></div>
+        <div class="legend" id="legend"></div>
+        <p class="tl" id="tl">&nbsp;</p>
+
+        <section class="block">
+          <h2>Taxes <span class="muted" style="font-weight:400;font-size:15px">US estimate</span></h2>
+          <div class="tax-layout">
+            <div class="tax-controls" id="tax-controls"></div>
+            <div><p class="callout" id="tax-summary" style="margin-top:8px"></p></div>
+          </div>
+          <p class="note-sm" id="tax-note"></p>
+        </section>
+
+        <section class="block about">
+          <h2>How this works</h2>
+          <p><b>Same start, two paths.</b> Both strategies start with the same bitcoin and the same extra savings, and both pay the same bills on the 1st of every month.</p>
+          <p><b>A, sell bitcoin:</b> the extra savings buy more bitcoin on day one. Each month it sells the oldest bitcoin first, enough to cover the bill <i>and</i> the capital-gains tax on that sale.</p>
+          <p><b>B, live off income:</b> the extra savings buy the income mix you pick, using real past payouts. Payouts pay the bills (after any tax). If they fall short, the gap is borrowed at your margin rate. Extra income pays the loan down first, then buys more income funds. Your bitcoin is never sold.</p>
+          <p class="muted">Simplified: ignores trading fees, assumes your broker lends against your holdings at the rate you choose, and doesn't model margin calls. Watch the "Loan vs. holdings" number. Above about 30–40%, a real broker may start selling for you. <a class="o" href="learn.html#never-sell">Read the full strategy, risks included</a></p>
+        </section>
+      </div>
+
+      <aside class="side">
+        <div class="panel">
+          <h3>Your situation</h3>
+          <div class="prow"><label for="btc">Bitcoin I own</label><div class="ctl"><input class="field" id="btc" type="number" inputmode="decimal" min="0" step="0.01" value="0.5" /></div></div>
+          <div class="prow"><label for="basis" id="basis-lbl">I paid per bitcoin</label><div class="ctl money"><input class="field" id="basis" type="number" inputmode="decimal" min="0" step="1000" value="30000" /></div></div>
+          <div class="prow"><label for="need">I need each month</label><div class="ctl money"><input class="field" id="need" type="number" inputmode="decimal" min="0" step="50" value="500" /></div></div>
+          <div class="prow"><label for="extra" id="extra-lbl">Extra savings</label><div class="ctl money"><input class="field" id="extra" type="number" inputmode="decimal" min="0" step="1000" value="50000" /></div></div>
+          <div class="label-row">Income mix for B</div>
+          <div class="choices" id="styles"></div>
+          <div class="prow"><label for="apr" id="apr-lbl">Borrowing rate</label><div class="ctl pct-in"><input class="field" id="apr" type="number" inputmode="decimal" min="0" max="25" step="0.25" value="8" /></div></div>
+          <div class="prow"><label for="held" id="held-lbl">Held over a year</label><select class="field ctl" id="held"><option value="yes" selected>Yes</option><option value="no">No</option></select></div>
+          <div class="panel-foot" id="period"></div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script type="module" src="/src/compare.js"></script>
+</body>
+</html>
