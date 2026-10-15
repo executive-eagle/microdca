@@ -12,10 +12,11 @@ const big = roller($('big'));
 const state = { amount: 100, freq: 'weekly', start: null, end: null };
 let price, chart, lump = false, result, plan = '5Y', view = 'ALL', animateNext = true, liveNow = null, bars = {};
 
-const PLAN_LENGTHS = [['1Y', '1Y'], ['2Y', '2Y'], ['3Y', '3Y'], ['5Y', '5Y'], ['10Y', '10Y'], ['MAX', 'Max']];
 const QUICK = [10, 25, 50, 100, 250];
 const YEARS_WORD = { '1Y': 'year', '2Y': '2 years', '3Y': '3 years', '5Y': '5 years', '10Y': '10 years' };
-const VIEWS = [['1D', '1D'], ['1W', '1W'], ['1M', '1M'], ['3M', '3M'], ['1Y', '1Y'], ['5Y', '5Y'], ['10Y', '10Y'], ['ALL', 'Max']];
+// 1D–3M zoom into the recent part of your plan; 1Y/5Y/10Y/Max set how long you've been buying.
+const VIEWS = [['1D', '1D'], ['1W', '1W'], ['1M', '1M'], ['3M', '3M'], ['1Y', '1Y'], ['5Y', '5Y'], ['10Y', '10Y'], ['MAX', 'Max']];
+const ZOOMS = new Set(['1D', '1W', '1M', '3M']);
 const VIEW_LABEL = { '1D': 'Past day', '1W': 'Past week', '1M': 'Past month', '3M': 'Past 3 months', '1Y': 'Past year', '5Y': 'Past 5 years', '10Y': 'Past 10 years' };
 const startFor = (r) => (r === 'MAX' ? price.first : addDays(state.end, -Math.round(365.25 * parseInt(r))));
 const isLive = () => state.end === todayISO();
@@ -54,7 +55,7 @@ function viewRows(r) {
     if (liveNow && pts.length) { const last = r.rows.at(-1); pts.push({ t: Date.now(), invested: last.invested, value: last.coins * liveNow, lump: r.lumpCoins * liveNow }); }
     if (pts.length > 1) return { pts, intraday: true, span: view === '1D' ? 'day' : view === '1W' ? 'week' : 'month' };
   }
-  const days = { '1D': 2, '1W': 7, '1M': 30, '3M': 91, '1Y': 365, '5Y': 1826, '10Y': 3652 }[view];
+  const days = { '1D': 2, '1W': 7, '1M': 30, '3M': 91 }[view];
   const from = days ? addDays(state.end, -days) : '0000';
   return { pts: downsample(r.rows.filter((x) => x.d >= from), 500), intraday: false, clipped: days && from < state.start };
 }
@@ -188,21 +189,25 @@ async function loadBars() {
   if (m?.BTC) bars['1mo'] = m.BTC;
 }
 
+function syncRange() {
+  const active = ZOOMS.has(view) ? view : plan;
+  $('range').querySelectorAll('[data-r]').forEach((b) => b.classList.toggle('active', b.dataset.r === active));
+}
+
 function syncViews() {
   // intraday windows only make sense when the plan runs to today
   $('range').querySelectorAll('[data-r]').forEach((b) => { b.hidden = !isLive() && (b.dataset.r === '1D' || b.dataset.r === '1W'); });
   if (!isLive() && (view === '1D' || view === '1W')) {
     view = 'ALL';
-    $('range').querySelectorAll('[data-r]').forEach((b) => b.classList.toggle('active', b.dataset.r === 'ALL'));
   }
 }
 
 function sync() {
   $('amount').value = state.amount; $('freq').value = state.freq; $('start').value = state.start; $('end').value = state.end;
-  $('plan-len').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.p === plan));
   $('howlong').value = plan || '';
   $('quick').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v === state.amount));
   syncViews();
+  syncRange();
 }
 
 (async () => {
@@ -216,12 +221,16 @@ function sync() {
     state.start = startFor(plan);
     const clamp = (v) => (v < price.first ? price.first : v > price.last ? price.last : v);
 
-    $('plan-len').innerHTML = PLAN_LENGTHS.map(([k, l]) => `<button data-p="${k}">Last ${l}</button>`).join('');
     $('quick').innerHTML = QUICK.map((v) => `<button data-v="${v}">$${v}</button>`).join('');
     $('quick').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.amount = +b.dataset.v; sync(); render(); };
-    $('howlong').onchange = (e) => { if (!e.target.value) return; plan = e.target.value; state.end = price.last; state.start = startFor(plan); animateNext = true; sync(); render(); };
-    $('plan-len').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; plan = b.dataset.p; state.end = price.last; state.start = startFor(plan); animateNext = true; sync(); render(); };
-    rangeBar($('range'), VIEWS, view, (w) => { view = w; animateNext = true; draw(); });
+    $('howlong').onchange = (e) => { if (!e.target.value) return; plan = e.target.value; view = 'ALL'; state.end = price.last; state.start = startFor(plan); animateNext = true; sync(); render(); };
+    rangeBar($('range'), VIEWS, plan, (w) => {
+      animateNext = true;
+      if (ZOOMS.has(w)) { view = w; syncRange(); draw(); return; }
+      // longer ranges change the plan itself: 10Y = ten years of buying
+      plan = w; view = 'ALL'; state.end = price.last; state.start = startFor(plan);
+      sync(); render();
+    });
     $('lump-toggle').onclick = () => { lump = !lump; animateNext = true; $('lump-toggle').textContent = lump ? 'Hide lump sum' : 'Compare lump sum'; draw(); };
     $('amount').oninput = (e) => { state.amount = +e.target.value; $('quick').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v === state.amount)); render(); };
     $('freq').onchange = (e) => { state.freq = e.target.value; render(); };
