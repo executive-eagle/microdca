@@ -11,7 +11,8 @@
     "payout_presets: ready-made ways to split payouts. kind = same (buy more of the fund that paid) | buy (needs target ticker) | margin | bills | cash.",
     "live_quotes_url: the free Cloudflare Worker (worker/ folder) that serves real-time prices for every ticker here. BTC is priced live in the browser.",
     "plain_name: the friendly name beginners see (e.g. 'Strategy Stretch'). risk: lower | medium | higher, with risk_note explaining why in one sentence. Risk is relative to the other funds on this site.",
-    "simple_styles: the three choices Simple mode shows instead of sliders. mix works like income_presets."
+    "simple_styles: the three choices Simple mode shows instead of sliders. mix works like income_presets.",
+    "roc_estimate: share of payouts expected to be return of capital (0 to 1), from the issuer's latest notices. tax_info_url / tax_info_label: where people can check the real numbers (19a-1 notices for funds, Form 8937 / 8-K filings for preferreds). Used only for the US tax estimates."
   ],
   "live_quotes_url": "https://microdca-quotes.microdca3.workers.dev/quotes",
   "bitcoin": {
@@ -35,7 +36,10 @@
       "schedule": "semimonthly",
       "daily_proposed_from": "2026-11-02",
       "about": "Variable-rate preferred stock from Strategy. Currently pays 12.00% a year on a $100 stated amount ($12/yr), twice a month ($0.50 each).",
-      "history_from": "2025-01-01"
+      "history_from": "2025-01-01",
+      "roc_estimate": 1.0,
+      "tax_info_url": "https://www.strategy.com/press/strategys-distributions-to-digital-credit-investors-in-2025-are-return-of-capital_02-02-2026",
+      "tax_info_label": "Strategy's return-of-capital notice (Form 8937)"
     },
     {
       "ticker": "SATA",
@@ -48,7 +52,10 @@
       "annual_dividend": 13.1,
       "schedule": "daily",
       "about": "Variable-rate perpetual preferred stock from Strive, a bitcoin treasury company. Moved from monthly to daily payouts in mid-2026: about $0.052 per trading day, roughly $13.10 a year on a $100 stated amount.",
-      "history_from": "2025-11-01"
+      "history_from": "2025-11-01",
+      "roc_estimate": 1.0,
+      "tax_info_url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001920406&type=8-K",
+      "tax_info_label": "Strive's dividend filings (SEC 8-K)"
     },
     {
       "ticker": "STRF",
@@ -68,7 +75,10 @@
       ],
       "daily_proposed_from": "2027-01-04",
       "about": "Fixed 10% on $100 ($10/yr), paid quarterly. Cumulative: skipped dividends are still owed. The most senior of Strategy's preferreds.",
-      "history_from": "2025-01-01"
+      "history_from": "2025-01-01",
+      "roc_estimate": 1.0,
+      "tax_info_url": "https://www.strategy.com/press/strategys-distributions-to-digital-credit-investors-in-2025-are-return-of-capital_02-02-2026",
+      "tax_info_label": "Strategy's return-of-capital notice (Form 8937)"
     },
     {
       "ticker": "STRK",
@@ -88,7 +98,10 @@
       ],
       "daily_proposed_from": "2027-01-04",
       "about": "Fixed 8% on $100 ($8/yr), paid quarterly, cumulative. Convertible: 10 STRK can become 1 MSTR share.",
-      "history_from": "2025-01-01"
+      "history_from": "2025-01-01",
+      "roc_estimate": 1.0,
+      "tax_info_url": "https://www.strategy.com/press/strategys-distributions-to-digital-credit-investors-in-2025-are-return-of-capital_02-02-2026",
+      "tax_info_label": "Strategy's return-of-capital notice (Form 8937)"
     },
     {
       "ticker": "STRD",
@@ -108,7 +121,10 @@
       ],
       "daily_proposed_from": "2027-01-04",
       "about": "Fixed 10% on $100 ($10/yr), paid quarterly. NON-cumulative: if Strategy skips a payment, it never has to make it up. Least senior.",
-      "history_from": "2025-01-01"
+      "history_from": "2025-01-01",
+      "roc_estimate": 1.0,
+      "tax_info_url": "https://www.strategy.com/press/strategys-distributions-to-digital-credit-investors-in-2025-are-return-of-capital_02-02-2026",
+      "tax_info_label": "Strategy's return-of-capital notice (Form 8937)"
     },
     {
       "ticker": "BTCI",
@@ -122,7 +138,10 @@
       "schedule": "monthly",
       "pay_day": 15,
       "about": "Covered-call ETF that sells options on bitcoin funds for monthly income. Recent distribution rate ~25\u201328% (last payout $0.7184 on Sept 30, 2026), mostly return of capital. 0.99% expense ratio. Upside is capped and the price can erode over time.",
-      "history_from": "2024-10-01"
+      "history_from": "2024-10-01",
+      "roc_estimate": 0.92,
+      "tax_info_url": "https://neosfunds.com/btci/",
+      "tax_info_label": "NEOS 19a-1 notices for BTCI"
     }
   ],
   "growth": [

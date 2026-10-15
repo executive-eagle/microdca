@@ -2,6 +2,7 @@ import {
   mountLayout, revealSections, isSimple, onMode, riskTag, everyday, drawInFor, reduceMotion, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller, Chart,
   usd, usd0, pct, btc, num, stat, term, changeLine, signClass, prettyDate, parseISO, addDays, daysBetween, todayISO, sparkline, css, onTheme, FREQ_WORD,
 } from './common.js';
+import { taxControls, taxRates, US_NOTE } from './tax.js';
 import { incomeAssets, buyTargets, colorOf, nameOf, PRESETS, PAYOUT_PRESETS, BITCOIN, LIVE_QUOTES_URL, setCustom, customColor, inferSchedule, isCustom, plainName, riskOf, STYLES } from './config.js';
 
 mountLayout('income.html');
@@ -83,7 +84,11 @@ function simulate() {
   const months = new Map(), rows = [];
   const px = (t, d) => prices[t](d);
 
-  const buyInto = (t, amt, d) => { const s = amt / px(t, d); shares[t] += s; fromPayouts[t] += s; return s; };
+  // tax tracking (US estimate): cost basis per holding, and what return of capital does to it
+  const basis = zero(), firstBuy = {}, basisLots = [];
+  const tax = { rocDeferred: 0, rocGainLong: 0, rocGainShort: 0, taxableNow: 0 };
+  const addBasis = (t, amt, d) => { basis[t] += amt; firstBuy[t] ??= d; basisLots.push({ d, amt }); };
+  const buyInto = (t, amt, d) => { const s = amt / px(t, d); shares[t] += s; fromPayouts[t] += s; addBasis(t, amt, d); return s; };
 
   for (const d of eachDay(start, end)) {
     // margin interest accrues daily
@@ -97,6 +102,12 @@ function simulate() {
       const div = daily ? shares[t] * rates[t](d) : (events[t].get(d) || 0) * shares[t];
       if (!div) continue;
       pot[t] += div; paidBy[t] += div; totalDiv += div;
+      // return of capital lowers basis; once basis hits zero the rest is a capital gain
+      const roc = div * (A[t].roc_estimate ?? 0);
+      const fromBasis = Math.min(roc, basis[t]);
+      basis[t] -= fromBasis; tax.rocDeferred += fromBasis;
+      if (roc > fromBasis) tax[daysBetween(firstBuy[t], d) > 365 ? 'rocGainLong' : 'rocGainShort'] += roc - fromBasis;
+      tax.taxableNow += div - roc;
     }
 
     // 2) split the pots across buckets
@@ -133,7 +144,7 @@ function simulate() {
     // 3) scheduled purchase
     if (buys.has(d)) {
       invested += state.amount;
-      for (const t of active()) { const amt = (state.amount * state.mix[t]) / mixTotal; shares[t] += amt / px(t, d); costBy[t] += amt; }
+      for (const t of active()) { const amt = (state.amount * state.mix[t]) / mixTotal; shares[t] += amt / px(t, d); costBy[t] += amt; addBasis(t, amt, d); }
     }
     const pending = Object.values(pot).reduce((s, v) => s + v, 0);
     const value = all.reduce((s, t) => s + (shares[t] ? shares[t] * px(t, d) : 0), 0) + cash + pending;
@@ -144,6 +155,7 @@ function simulate() {
   return {
     start, end, rows, months: [...months], B, invested, totalDiv, annual, monthly: annual / 12, value: last.value, net: last.net,
     shares, fromPayouts, paidBy, costBy, cash, spent, all, buys: buys.size,
+    tax: { ...tax, basis: Object.values(basis).reduce((a, b) => a + b, 0), basisLots, holdValue: all.reduce((a, t) => a + (shares[t] ? shares[t] * px(t, end) : 0), 0) },
     margin: hasMargin ? { start: state.margin.balance, bal, interest, paidDown, saved: shadowBal - bal - paidDown, payoffDate, shadowBal } : null,
   };
 }
@@ -226,9 +238,41 @@ function render() {
   renderBuckets(r);
   renderMargin(r);
   holdings(r);
+  renderTax(r);
   syncSimple();
   draw();
   save();
+}
+
+/* ---------- taxes (US estimate) ---------- */
+function renderTax(r) {
+  const x = r.tax, R = taxRates();
+  const roc = x.rocDeferred + x.rocGainLong + x.rocGainShort;
+  const taxNow = x.taxableNow * R.ordinary + x.rocGainLong * R.longTerm + x.rocGainShort * R.ordinary;
+  const ifOrdinary = r.totalDiv * R.ordinary;
+  // selling everything today: gain over adjusted basis, split long/short by how long the money has been in
+  const gain = x.holdValue - x.basis;
+  const yearAgo = addDays(r.end, -365);
+  const totalIn = x.basisLots.reduce((a, l) => a + l.amt, 0) || 1;
+  const longShare = x.basisLots.filter((l) => l.d <= yearAgo).reduce((a, l) => a + l.amt, 0) / totalIn;
+  const sellTax = Math.max(0, gain) * (longShare * R.longTerm + (1 - longShare) * R.ordinary);
+  $('tax-stats').innerHTML = [
+    stat(term('Return of capital', 'Payouts the issuer says are a return of your own money. Not taxed when paid. Instead they lower your cost basis, so you owe more when you sell.', 'taxes'), `${usd(roc)} <span class="muted">(${r.totalDiv ? Math.round((roc / r.totalDiv) * 100) : 0}%)</span>`),
+    stat(term('Taxed now', 'The rest of the payouts, estimated as regular income at your bracket.', 'taxes'), usd(x.taxableNow)),
+    stat('Est. tax on payouts', usd(taxNow), taxNow > 0 ? 'neg' : ''),
+    stat(term('If you sold everything today', `Estimated tax on the gain over your adjusted cost basis: long-term rate on money held over a year (${Math.round(longShare * 100)}% of it here), regular rate on the rest.`, 'taxes'), gain > 0 ? usd(sellTax) : '$0.00'),
+  ].join('');
+  const saved = ifOrdinary - taxNow;
+  $('tax-summary').innerHTML = r.totalDiv < 0.01 ? 'No payouts yet, so nothing to tax.' :
+    `Of the <b>${usd0(r.totalDiv)}</b> paid to you, about <b>${usd0(roc)}</b> counts as return of capital, so you'd owe roughly <b>${usd0(taxNow)}</b> now instead of <b>${usd0(ifOrdinary)}</b> if it were all regular income ` +
+    `(${usd0(saved)} less, at your ${R.bracket}% bracket${R.state ? ` + ${R.state}% state` : ''}). ` +
+    (x.rocDeferred > 0.5 ? `That isn't tax-free: your cost basis is <b>${usd0(x.rocDeferred)}</b> lower, so it's taxed as a capital gain when you eventually sell. Hold and never sell, and it keeps waiting.` : '');
+  const used = TICKERS.filter((t) => r.paidBy[t] > 0);
+  const links = used.filter((t) => A[t].tax_info_url).map((t) => `<a href="${A[t].tax_info_url}" target="_blank" rel="noopener">${t}</a>`);
+  const unknown = used.filter((t) => A[t].roc_estimate == null);
+  $('tax-note').innerHTML = `Return-of-capital shares are estimates from each issuer's latest notices (Strategy and Strive preferreds: 100%; BTCI: about 92%). ` +
+    `They change, and the final split comes on your 1099-DIV. Check the fund's own website for the most accurate 19a-1 notices${links.length ? ` (${links.join(', ')})` : ''}. ` +
+    `${unknown.length ? `${unknown.join(', ')}: no estimate, so treated as fully taxable. ` : ''}Non-return-of-capital payouts are treated as regular income. ${US_NOTE} <a href="learn.html#taxes">How taxes work here</a>`;
 }
 
 /* ---------- Simple mode ---------- */
@@ -634,6 +678,7 @@ function bindRouter() {
     $('sched-lbl').innerHTML = term('Schedule', 'Actual: paid on the real historical dates (STRC twice a month, STRF/STRK/STRD quarterly, BTCI monthly). Daily (proposed): Strategy shareholders vote Oct 28, 2026 on paying every calendar day. This spreads each preferred\'s payouts across every day. Funds without a proposal keep their normal schedule.');
     rangeBar($('view'), [['income', 'Payouts'], ['value', 'Value']], view, (v) => { view = v; animateNext = true; draw(); });
     bindRouter();
+    taxControls($('tax-controls'), () => result && renderTax(result));
     renderSimple();
     render();
     revealSections();

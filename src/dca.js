@@ -3,6 +3,7 @@ import {
   usd, usd0, pct, btc, stat, term, changeLine, signClass, prettyDate, prettyTime, addDays, toISO, todayISO, css, onTheme, FREQ_WORD,
 } from './common.js';
 import { LIVE_QUOTES_URL } from './config.js';
+import { taxControls, taxRates, US_NOTE } from './tax.js';
 
 mountLayout('bitcoin.html');
 
@@ -24,17 +25,17 @@ function simulate() {
   const buys = new Set(scheduleDates(start, end, freq));
   const startPrice = price(start);
   let invested = 0, coins = 0;
-  const rows = [];
+  const rows = [], lots = [];
   for (const d of eachDay(start, end)) {
     const p = price(d);
-    if (buys.has(d)) { invested += amount; coins += amount / p; }
+    if (buys.has(d)) { invested += amount; coins += amount / p; lots.push({ d, amt: amount, coins: amount / p }); }
     rows.push({ d, invested, coins, value: coins * p, p });
   }
   const lumpCoins = invested / startPrice;
   rows.forEach((r) => { r.lump = lumpCoins * r.p; });
   const last = rows.at(-1);
   const byDate = new Map(rows.map((r) => [r.d, r]));
-  return { rows, byDate, lumpCoins, invested, coins, value: last.value, endPrice: last.p, avg: invested / coins, lumpValue: last.lump, startPrice, buys: buys.size };
+  return { rows, lots, byDate, lumpCoins, invested, coins, value: last.value, endPrice: last.p, avg: invested / coins, lumpValue: last.lump, startPrice, buys: buys.size };
 }
 
 /**
@@ -112,7 +113,36 @@ function render() {
   $('verdict').textContent = diff >= 0
     ? `Buying a little at a time came out ${usd0(diff)} ahead here. Spreading the buys out meant you didn't go all in at ${usd0(r.startPrice)}.`
     : `Putting it all in at once came out ${usd0(-diff)} ahead here, because bitcoin mostly rose after ${prettyDate(state.start)}. But that only works if you have the whole amount on day one, and nobody knows ahead of time which way prices will go.`;
+  renderTax(r);
   draw();
+}
+
+/** US tax if you sold every bitcoin today: each weekly/monthly buy has its own holding period. */
+function renderTax(r) {
+  const R = taxRates();
+  const yearAgo = addDays(state.end, -365);
+  let lt = 0, st = 0, ltIn = 0;
+  for (const l of r.lots) {
+    const g = l.coins * r.endPrice - l.amt;
+    if (l.d <= yearAgo) { lt += g; ltIn += l.amt; } else st += g;
+  }
+  // a loss on one side offsets the gain on the other, then each side is taxed at its own rate
+  const net = lt + st;
+  const tax = net <= 0 ? 0
+    : lt >= 0 && st >= 0 ? lt * R.longTerm + st * R.ordinary
+    : lt > 0 ? net * R.longTerm
+    : net * R.ordinary;
+  $('tax-stats').innerHTML = [
+    stat(term('Long-term gain', 'Profit on bitcoin you\'ve held more than a year. Taxed at the lower long-term rate (0%, 15% or 20%).', 'taxes'), usd(lt), signClass(lt)),
+    stat(term('Short-term gain', 'Profit on bitcoin held a year or less. Taxed like regular income.', 'taxes'), usd(st), signClass(st)),
+    stat('Estimated tax', usd(tax), tax > 0 ? 'neg' : ''),
+    stat('You\'d keep', usd(r.value - tax)),
+  ].join('');
+  $('tax-summary').innerHTML = net <= 0
+    ? `Selling today would be a loss, so no tax. A loss can even lower taxes on other gains.`
+    : `Selling everything today would cost about <b>${usd0(tax)}</b> in tax at your ${R.bracket}% bracket${R.state ? ` + ${R.state}% state` : ''}. ` +
+      `<b>Not selling costs nothing</b>: holding bitcoin, or borrowing against it, isn't a taxable sale. That's one reason people use income to cover expenses instead of selling. <a class="o" href="learn.html#never-sell">How that works</a>`;
+  $('tax-note').innerHTML = `${US_NOTE} Ignores fees and the 3.8% net investment income tax for high earners. <a href="learn.html#taxes">How taxes work here</a>`;
 }
 
 function draw() {
@@ -198,6 +228,7 @@ function sync() {
     $('start').onchange = (e) => { if (e.target.value) { state.start = clamp(e.target.value); plan = null; sync(); render(); } };
     $('end').onchange = (e) => { if (e.target.value) { state.end = clamp(e.target.value); sync(); render(); } };
     for (const id of ['start', 'end']) { $(id).min = price.first; $(id).max = price.last; }
+    taxControls($('tax-controls'), () => result && renderTax(result));
     sync(); render();
     revealSections();
 

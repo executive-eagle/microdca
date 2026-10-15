@@ -14,8 +14,8 @@
       <h1 class="title">Learn the basics</h1>
       <p>Everything on MicroDCA in plain English. Each one takes about 30 seconds to read.</p>
       <nav class="toc" aria-label="Topics">
-        <a href="#bitcoin">Bitcoin</a><a href="#dca">A little at a time</a><a href="#dividends">Dividends</a><a href="#preferred">Preferred stock</a>
-        <a href="#covered-call">Covered-call ETFs</a><a href="#compounding">Compounding</a><a href="#margin">Margin</a><a href="#risk">Risk ratings</a><a href="#faq">Questions</a>
+        <a href="#never-sell">Never a forced seller</a><a href="#bitcoin">Bitcoin</a><a href="#dca">A little at a time</a><a href="#dividends">Dividends</a><a href="#preferred">Preferred stock</a>
+        <a href="#covered-call">Covered-call ETFs</a><a href="#compounding">Compounding</a><a href="#margin">Margin</a><a href="#taxes">Taxes (US)</a><a href="#risk">Risk ratings</a><a href="#faq">Questions</a>
       </nav>
     </section>
 
@@ -71,6 +71,79 @@
       <p class="tl-dr">Borrowing money from your broker, using your investments as the guarantee.</p>
       <p>Margin makes gains bigger and losses bigger, and you pay interest the whole time. If prices drop too far, the broker can sell your investments for you at the worst moment (a "margin call").</p>
       <p>Paying down a margin loan is like earning a guaranteed return equal to the interest rate. MicroDCA's payout splitter (Advanced mode) lets you send part of your income to paying it off.</p>
+    </section>
+
+    <section class="lesson" id="never-sell">
+      <h2>Income so you're never forced to sell your bitcoin</h2>
+      <p class="tl-dr">The goal isn't to beat bitcoin. It's to never have to sell it at a bad time.</p>
+      <p>Most people who hold bitcoin eventually sell some, to pay for life, an emergency or a big purchase. And the moment you need cash is often the moment prices are down. Selling then locks in the loss, and in the U.S. it can also trigger a tax bill.</p>
+      <p>The idea is to build a second engine next to your bitcoin:</p>
+      <ol class="ladder">
+        <li><b>Set aside part of what you earn</b> and buy investments that pay you every month (or every day).</li>
+        <li><b>Let that income cover your needs</b>, or reinvest it into more income funds, some bitcoin, or paying down debt.</li>
+        <li><b>If income isn't enough, borrow a little</b> against your holdings at a reasonable rate instead of selling, and pay it back from the income.</li>
+        <li><b>Worst case, sell the income funds first.</b> Your bitcoin is the last thing you ever touch.</li>
+      </ol>
+      <p>Done well, you keep your original bitcoin <i>and</i> own a growing pile of income-producing assets you can live from or borrow against.</p>
+
+      <h3 class="lesson-sub">What critics get right</h3>
+      <p><b>"Just buy more bitcoin."</b> In a strong bull market, money in income funds will grow far less than the same money in bitcoin. That's real. But it compares the wrong things. The fair comparison isn't "income fund vs. bitcoin", it's "income fund vs. selling bitcoin when you need money."</p>
+      <p><b>These aren't safe havens.</b> They're tied to bitcoin. In the spring 2026 crash they fell <i>with</i> bitcoin:</p>
+      <table class="risk-table" id="crash-table"></table>
+      <p class="note-sm" id="crash-note"></p>
+      <p>That's why step 4 should rarely happen. If you sell the funds in a crash, you sell them low too. What did hold up was the <b>income</b>: every preferred kept paying through the crash, and STRC and SATA even raised their rates. BTCI's payout fell about 18%, because covered-call payouts shrink when prices drop.</p>
+      <p><b>The money comes from the companies.</b> Strategy pays its preferred dividends by raising more money or, if it has to, selling bitcoin. It did sell bitcoin to fund dividends in June 2026. Research firm K33 argues the preferreds may cost Strategy bitcoin over time. Your income is only as reliable as the issuer.</p>
+
+      <h3 class="lesson-sub">Borrowing: small is the whole trick</h3>
+      <p>Borrowing works when the loan is small next to what it's borrowed against. If you borrow 20% of your portfolio's value and everything drops 30%, your loan is now about 29% of what's left: uncomfortable, but survivable. Borrow 50% and the same drop puts you near 71%, where a broker can sell your investments for you. That's exactly the forced selling you're trying to avoid. Brokers often require extra cushion for volatile holdings, and interest keeps adding up, so plan to pay loans down from income.</p>
+
+      <h3 class="lesson-sub">Taxes: "return of capital"</h3>
+      <p>Strategy says all of its 2025 preferred dividends were a <b>return of capital</b>, and it expects that to continue because it has no taxable earnings. Many covered-call ETFs report much of their payout the same way.</p>
+      <p>Return of capital isn't taxed when you receive it. Instead it lowers your cost basis (what the IRS considers you paid). Once your basis reaches zero, further payouts are taxed as capital gains, usually at lower long-term rates if you've held more than a year. When you eventually sell, the lower basis means a bigger gain. So it's mostly <b>tax deferral</b>, not tax-free, and you or your broker need to track your basis.</p>
+      <p>It isn't guaranteed. Strategy's treatment depends on it continuing to have no earnings for tax purposes, and a fund's mix can change year to year. For a covered-call ETF, return of capital can also simply mean you're getting your own money back while the share price falls. This is general information for US residents, not tax advice. <a class="o" href="#taxes">More on taxes</a></p>
+
+      <h3 class="lesson-sub">Rules of thumb people use</h3>
+      <ul class="ladder">
+        <li>Size the income to cover a real expense first (a bill, then rent), not to chase the highest yield.</li>
+        <li>Favor payers that kept paying through a crash, and spread across issuers. Not everything should depend on one company.</li>
+        <li>Keep any borrowing small, and keep some plain cash for emergencies.</li>
+        <li>Judge every holding by total return (price change plus payouts), not yield alone.</li>
+      </ul>
+      <a class="try" href="income.html">Try it: split payouts between bills, margin and more bitcoin (Advanced mode)</a>
+    </section>
+
+    <section class="lesson" id="taxes">
+      <h2>Taxes (for US residents)</h2>
+      <p class="tl-dr">You mostly pay tax when you sell at a profit or receive income. Just holding isn't taxed.</p>
+      <p class="note-sm">This is for people who pay US taxes. Other countries have very different rules, so check your local rules if you live elsewhere. Not tax advice.</p>
+
+      <h3 class="lesson-sub">Selling</h3>
+      <p>For taxes, bitcoin is treated as property. Selling it, or spending it, at a profit is a taxable gain. Same for selling a stock or ETF.</p>
+      <ul class="ladder">
+        <li><b>Held a year or less:</b> short-term gain, taxed like your paycheck (10% to 37%).</li>
+        <li><b>Held more than a year:</b> long-term gain, taxed at 0%, 15% or 20% depending on your income. For most people that's 15%.</li>
+        <li><b>Selling at a loss</b> can lower the tax on your other gains.</li>
+      </ul>
+      <p>When you buy a little at a time, each purchase has its own clock. Some of your bitcoin can be long-term while the newest buys are still short-term.</p>
+
+      <h3 class="lesson-sub">Payouts</h3>
+      <p>Regular dividends are taxed in the year you get them: "qualified" dividends at the lower long-term rates, "ordinary" dividends like regular income.</p>
+      <p><b>Return of capital (ROC)</b> is different. The issuer is saying the payout is your own money coming back, not profit. It isn't taxed when you receive it. Instead it lowers your <b>cost basis</b> (what the IRS treats you as having paid). When you sell, the lower basis means a bigger taxable gain, usually at long-term rates. If your basis reaches zero, further ROC payouts are taxed as capital gains right away.</p>
+      <p>Strategy says all of its 2025 preferred dividends were return of capital, and Strive says the same for SATA. NEOS estimated about 92% of BTCI's 2026 payouts as return of capital. These are estimates and can change every year.</p>
+
+      <h3 class="lesson-sub">Where to find the real numbers</h3>
+      <ul class="ladder">
+        <li><b>19a-1 notices:</b> funds and ETFs (like BTCI) post these on their website with each payout, estimating how much is income vs. return of capital. Always check the fund's own website for the most accurate, latest notice.</li>
+        <li><b>Form 8937 and press releases:</b> companies like Strategy post these when a payout changes your cost basis.</li>
+        <li><b>Form 1099-DIV:</b> the final word. Your broker sends it after the year ends, with the official split.</li>
+      </ul>
+
+      <h3 class="lesson-sub">Borrowing</h3>
+      <p>Borrowing against your investments isn't a sale, so it isn't taxed. Interest on money you borrow to spend usually isn't deductible. Interest on money borrowed to buy investments sometimes can be. Ask a tax professional.</p>
+
+      <h3 class="lesson-sub">How MicroDCA estimates taxes</h3>
+      <p>MicroDCA uses the federal bracket you pick and an optional flat state rate. It treats any payout that isn't return of capital as regular income, which is cautious. It skips the extra 3.8% tax that applies above $200,000 of income ($250,000 married), and it skips fees. The estimates help you compare choices. They aren't what you'll actually owe.</p>
+      <a class="try" href="income.html">See the tax estimate on the Income page</a>
     </section>
 
     <section class="lesson" id="risk">
