@@ -1,10 +1,11 @@
 import {
-  mountLayout, revealSections, riskTag, drawInFor, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, intraday, prettyTime, toISO, eachDay, addDays, lineChart, rangeBar, setTrend, roller, downsample, sparkline, rgba,
+  mountLayout, revealSections, panelAfter, riskTag, drawInFor, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, intraday, prettyTime, toISO, eachDay, addDays, lineChart, rangeBar, setTrend, roller, downsample, sparkline, rgba,
   usd, usd0, pct, num, btc, term, changeLine, signClass, prettyDate, todayISO, daysBetween, css, onTheme,
 } from './common.js';
 import { incomeAssets, colorOf, isPayDay, PORTFOLIO, BITCOIN, LIVE_QUOTES_URL, plainName, riskOf } from './config.js';
 
 mountLayout('portfolio.html');
+panelAfter(document.getElementById('summary'));
 
 const $ = (id) => document.getElementById(id);
 const big = roller($('big'));

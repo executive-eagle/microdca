@@ -137,6 +137,22 @@ function initTerms() {
   addEventListener('scroll', close, { passive: true });
 }
 
+/**
+ * On phones, move the side panel (inputs) up to sit right after `anchor`, instead of after every result.
+ * Moves back on wider screens.
+ */
+export function panelAfter(anchor) {
+  const side = document.querySelector('.side');
+  if (!side || !anchor) return;
+  const home = side.parentElement, mq = matchMedia('(max-width: 960px)');
+  const place = () => {
+    if (mq.matches && side.previousElementSibling !== anchor) { anchor.after(side); side.classList.add('moved'); }
+    else if (!mq.matches && side.parentElement !== home) { home.append(side); side.classList.remove('moved'); }
+  };
+  place();
+  mq.addEventListener('change', place);
+}
+
 /* ---------- beginner helpers ---------- */
 const RISK_WORD = { lower: 'Lower risk', medium: 'Medium risk', higher: 'Higher risk', unknown: 'Not rated' };
 /** Small colored risk chip; the note shows on hover/tap. */
@@ -300,6 +316,12 @@ export function roller(el) {
   let prev = '';
   return (text, instant = false) => {
     if (text === prev) return;
+    // roll only small changes (live ticks); big jumps and scrubbing update instantly, like Robinhood
+    if (!instant && text.length === prev.length) {
+      let changed = 0;
+      for (let i = 0; i < text.length; i++) if (text[i] !== prev[i]) changed++;
+      if (changed > 3) instant = true;
+    } else if (text.length !== prev.length) instant = true;
     el.classList.toggle('instant', instant);
     const reuse = text.length === prev.length && el.children.length === text.length;
     if (!reuse) {

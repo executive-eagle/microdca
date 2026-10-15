@@ -1,11 +1,12 @@
 import {
-  mountLayout, revealSections, isSimple, onMode, riskTag, everyday, drawInFor, reduceMotion, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller, Chart,
+  mountLayout, revealSections, panelAfter, isSimple, onMode, riskTag, everyday, drawInFor, reduceMotion, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller, Chart,
   usd, usd0, pct, btc, num, stat, term, changeLine, signClass, prettyDate, parseISO, addDays, daysBetween, todayISO, sparkline, css, onTheme, FREQ_WORD,
 } from './common.js';
 import { taxControls, taxRates, US_NOTE } from './tax.js';
 import { incomeAssets, buyTargets, colorOf, nameOf, PRESETS, PAYOUT_PRESETS, BITCOIN, LIVE_QUOTES_URL, setCustom, customColor, inferSchedule, isCustom, plainName, riskOf, STYLES } from './config.js';
 
 mountLayout('income.html');
+panelAfter(document.getElementById('summary'));
 
 const $ = (id) => document.getElementById(id);
 const big = roller($('big'));

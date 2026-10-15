@@ -1,11 +1,12 @@
 import {
-  mountLayout, revealSections, isSimple, onMode, drawInFor, loadData, priceLookup, liveBTC, intraday, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller,
+  mountLayout, revealSections, panelAfter, isSimple, onMode, drawInFor, loadData, priceLookup, liveBTC, intraday, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller,
   usd, usd0, pct, btc, stat, term, changeLine, signClass, prettyDate, prettyTime, addDays, toISO, todayISO, css, onTheme, FREQ_WORD,
 } from './common.js';
 import { LIVE_QUOTES_URL } from './config.js';
 import { taxControls, taxRates, US_NOTE } from './tax.js';
 
 mountLayout('bitcoin.html');
+panelAfter(document.getElementById('summary'));
 
 const $ = (id) => document.getElementById(id);
 const big = roller($('big'));

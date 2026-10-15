@@ -546,3 +546,40 @@ html, body { overflow-x: clip; }
 .learn-head { padding-bottom: 28px; }
 .toc { margin-top: 18px; }
 .choice.active { border-color: var(--line); }
+
+/* phones: chart action buttons (like "Compare lump sum") get their own line under the timeframes */
+@media (max-width: 760px) {
+  .rangebar:has(#lump-toggle) { flex-wrap: wrap; row-gap: 0; }
+  .rangebar #lump-toggle { order: 99; flex-basis: 100%; text-align: left; border-bottom: 0; padding: 2px 0 12px; }
+  .rangebar:has(#lump-toggle) .spacer { display: none; }
+}
+/* touch screens keep a 'hover' color after a tap; don't let that look like a selection */
+@media (hover: none) { .rangebar button:not(.active):not(.act):hover { color: var(--fg); } .rangebar .act:hover { color: var(--brand); } }
+
+/* phones: the side panel moved under the summary gets breathing room */
+.side.moved { margin-top: 24px; position: static; max-height: none; overflow: visible; }
+/* phones: inputs sit flat in the page instead of a bordered box */
+@media (max-width: 960px) {
+  .side.moved .panel, .side.moved .earn { border: 0; border-radius: 0; padding: 0; }
+  .side.moved .panel h3 { font-size: 22px; padding-bottom: 14px; }
+  .side.moved { gap: 28px; }
+  .side.moved .earn { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 18px 0; }
+}
+
+/* phones: calmer holdings rows (Live $10K + Income) */
+@media (max-width: 560px) {
+  .li, .li.bucket-res { grid-template-columns: minmax(0, 1fr) auto; }
+  .li svg.spark, .li > span:empty, .li .plus { display: none; }
+  .li .name { flex-wrap: wrap; row-gap: 2px; font-size: 15px; }
+  .li .sub { white-space: normal; }
+  .side.moved .drop { right: 0; top: 34px; }
+}
+@media (max-width: 960px) {
+  .side.moved .drop { top: 38px; animation-name: drop-up-sm; }
+}
+@keyframes drop-up-sm { 0% { opacity: 0; transform: translateY(8px); } 25% { opacity: 1; } 100% { opacity: 0; transform: translateY(-8px); } }
+@media (max-width: 960px) {
+  .layout.inputs-first > .side .panel { border: 0; border-radius: 0; padding: 0; }
+  .layout.inputs-first > .side .panel h3 { font-size: 22px; padding-bottom: 14px; }
+  .layout.inputs-first > .side { border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+}
