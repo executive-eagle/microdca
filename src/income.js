@@ -412,6 +412,22 @@ function initAssets() {
   for (const t of TICKERS) { events[t] = new Map(data.series[t].dividends); rates[t] = dailyRate(t); }
 }
 
+/**
+ * Scales every slice except `keep` so the split adds up to exactly 100%
+ * (used when a ticker is added at 10% or removed), keeping the others' proportions.
+ */
+function rebalance(keep = null) {
+  const fixed = keep ? state.mix[keep] || 0 : 0;
+  const others = TICKERS.filter((t) => t !== keep && state.mix[t] > 0);
+  const sum = others.reduce((a, t) => a + state.mix[t], 0);
+  if (!sum) { if (keep) state.mix[keep] = 100; return; }
+  const room = 100 - fixed;
+  let used = 0;
+  others.forEach((t) => { state.mix[t] = Math.floor((state.mix[t] / sum) * room); used += state.mix[t]; });
+  // hand out the rounding leftovers to the biggest slices
+  [...others].sort((a, b) => state.mix[b] - state.mix[a]).slice(0, room - used).forEach((t) => { state.mix[t] += 1; });
+}
+
 /** Drops anything in the saved plan that points at a ticker that no longer exists. */
 function sanitize() {
   const known = new Set(TARGETS.map((t) => t.ticker));
@@ -440,9 +456,11 @@ async function addTicker() {
     saveCustom();
     initAssets();
     state.mix[sym] = 10;
+    rebalance(sym);
+    $('presets').querySelectorAll('button').forEach((b) => b.classList.remove('active'));
     renderMix(); renderBucketEditor(); refreshCompare();
     $('add-sym').value = '';
-    msg(`Added ${h.name} at 10% of each purchase. Drag its slider to change it.`, 'pos');
+    msg(`Added ${h.name} at 10% of each purchase. The others were trimmed to make room.`, 'pos');
     animateNext = true;
     render();
   } catch (err) {
@@ -455,9 +473,11 @@ async function addTicker() {
 function removeTicker(t) {
   custom = custom.filter((c) => c.ticker !== t);
   saveCustom();
+  const had = state.mix[t] > 0;
   delete state.mix[t];
   initAssets();
   sanitize();
+  if (had) rebalance();
   renderMix(); renderBucketEditor(); refreshCompare();
   $('add-msg').textContent = `Removed ${t}.`;
   render();
