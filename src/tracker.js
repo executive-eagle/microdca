@@ -25,7 +25,7 @@ function history(t) {
     if (d >= cutoff) continue; // today is estimated live
     const share = close >= par ? 1 : high >= par ? 0.5 : 0;
     const raised = vol * share * close * part;
-    out.push({ d, raised, btc: raised ? raised / btcDaily(d) : 0, open: share > 0 });
+    out.push({ d, raised, btc: raised ? raised / btcDaily(d) : 0, open: share > 0, shares: vol * share });
   }
   return out;
 }
@@ -524,6 +524,34 @@ function drawDaily() {
   $('daily').onmouseleave = () => { $('daily-tl').innerHTML = dailyDefault(days.length); };
   $('daily-tl').innerHTML = dailyDefault(days.length);
 }
+/* ================= expandable table: every day the ATM stacked bitcoin ================= */
+let daysOpen = false;
+const DAYS_SHOWN = 8;
+function renderDaysTable() {
+  const byDay = new Map();
+  for (const t of T) for (const r of hist[t]) if (r.btc > 0) {
+    const row = byDay.get(r.d) || { d: r.d, raised: 0, total: 0 };
+    row[t] = r.btc; row.raised += r.raised; row.total += r.btc;
+    byDay.set(r.d, row);
+  }
+  if (T.some((t) => today[t].btc > 0)) {
+    const d = sessionInfo().date, row = { d, raised: 0, total: 0, today: true };
+    for (const t of T) { row[t] = today[t].btc; row.raised += today[t].raised; row.total += today[t].btc; }
+    byDay.set(d, row);
+  }
+  const rows = [...byDay.values()].sort((a, b) => b.d.localeCompare(a.d)); // newest first
+  const shown = daysOpen ? rows : rows.slice(0, DAYS_SHOWN);
+  const b = (v) => (v ? num(v, v >= 100 ? 0 : 1) : '<span class="muted">—</span>');
+  $('days').innerHTML = `
+    <thead><tr><th>Day</th>${T.map((t) => `<th><span class="dot" style="background:${A[t].color}"></span>${t}</th>`).join('')}<th>Total</th><th class="opt">Raised</th><th class="opt">Bitcoin price</th></tr></thead>
+    <tbody>${shown.map((r) => `<tr><th scope="row">${prettyDate(r.d)}${r.today ? ' <span class="o">today</span>' : ''}</th>${T.map((t) => `<td>${b(r[t])}</td>`).join('')}<td><b>${num(r.total, r.total >= 100 ? 0 : 1)} BTC</b></td><td class="opt">${compactUsd(r.raised)}</td><td class="opt">${usd0(r.today ? liveBtc || btcDaily(r.d) : btcDaily(r.d))}</td></tr>`).join('')}</tbody>
+    ${daysOpen && rows.length ? `<tfoot><tr><th scope="row">All ${rows.length} days</th>${T.map((t) => `<td>${num(rows.reduce((a, r) => a + (r[t] || 0), 0), 0)}</td>`).join('')}<td><b>${num(rows.reduce((a, r) => a + r.total, 0), 0)} BTC</b></td><td class="opt">${compactUsd(rows.reduce((a, r) => a + r.raised, 0))}</td><td class="opt"></td></tr></tfoot>` : ''}`;
+  const btn = $('days-more');
+  btn.hidden = rows.length <= DAYS_SHOWN;
+  btn.textContent = daysOpen ? 'Show fewer' : `Show all ${rows.length} days`;
+  btn.setAttribute('aria-expanded', daysOpen);
+}
+
 const dailyDefault = (n) => `${n} trading days with the ATM open. Hover a bar for the details.`;
 
 /* ================= coins ================= */
@@ -564,6 +592,7 @@ function recompute(fromPoll = false) {
       if (d > 0.0005) { jar.add(t, d, prev); stack.sparkle(t, `+${num(d, 2)} BTC`); }
     }
     drawPerMinute();
+    renderDaysTable();
   }
   lastToday = Object.fromEntries(T.map((t) => [t, { ...today[t] }]));
 }
@@ -589,6 +618,12 @@ function recompute(fromPoll = false) {
     $('preview').onclick = runPreview;
     drawHistory();
     drawDaily();
+    renderDaysTable();
+    $('days-more').onclick = () => {
+      daysOpen = !daysOpen;
+      renderDaysTable();
+      if (!daysOpen) $('days').scrollIntoView({ block: 'nearest' });
+    };
     replay();
     $('replay').onclick = replay;
     $('filings').innerHTML = T.map((t) => `<a class="o" href="${A[t].atm.filings_url}" target="_blank" rel="noopener">${A[t].atm.filings_label}</a>`).join(' and ');
@@ -598,7 +633,7 @@ function recompute(fromPoll = false) {
       const v = Math.max(1, Math.min(100, +e.target.value || 45));
       part = v / 100; $('part-word').textContent = v + '%';
       for (const t of T) hist[t] = history(t);
-      recompute(); drawHistory(); drawDaily(); replay();
+      recompute(); drawHistory(); drawDaily(); renderDaysTable(); replay();
     };
     revealSections();
     // poll: every 15s while the market is open, every minute otherwise; paused in background tabs

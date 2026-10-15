@@ -639,3 +639,15 @@ html, body { overflow-x: clip; }
 .chart-wrap.pm { height: 300px; }
 @media (max-width: 760px) { .chart-wrap.pm { height: 230px; } }
 .trk-tiles { margin-top: 18px; }
+
+/* ATM days table */
+.days-wrap { margin-top: 18px; }
+.ctable.days { table-layout: auto; font-size: 14px; }
+.ctable.days thead th { font-size: 13px; color: var(--muted); font-weight: 600; text-align: right; padding-bottom: 10px; }
+.ctable.days thead th:first-child { text-align: left; }
+.ctable.days th[scope='row'] { width: auto; white-space: nowrap; }
+.ctable.days td b { font-weight: 600; }
+.ctable.days tfoot th, .ctable.days tfoot td { border-bottom: 0; padding-top: 14px; font-weight: 600; color: var(--fg); }
+.more-btn { display: block; width: 100%; margin-top: 4px; padding: 12px 0; background: none; border: 0; border-bottom: 1px solid var(--line); color: var(--brand); font-weight: 600; font-size: 14px; cursor: pointer; text-align: left; }
+.more-btn:hover { color: var(--fg); }
+@media (max-width: 600px) { .ctable.days .opt { display: none; } .ctable.days { font-size: 13px; } }
