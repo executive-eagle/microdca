@@ -328,14 +328,19 @@ function marketBadge(live) {
       hint(document.querySelector(`.li[data-t="${t}"]`), `+${usd(perHr, 3)}/hr`);
     }, 2000);
     // live prices: every 15s while the stock market is open (pre/after hours too), every minute otherwise
+    // paused while the tab is in the background (saves the free request quota); refreshes the moment you come back
+    let timer;
     const pull = async () => {
+      clearTimeout(timer);
+      if (document.hidden) return;
       const [p, live] = await Promise.all([liveBTC(), liveQuotes(LIVE_QUOTES_URL)]);
       if (p) liveBtc = p;
       applyQuotes(prices, live);
       marketBadge(live);
       if (!playing) rebuild();
-      setTimeout(pull, live && live.open !== 'closed' ? 15_000 : 60_000);
+      timer = setTimeout(pull, live && live.open !== 'closed' ? 15_000 : 60_000);
     };
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(); });
     pull();
   } catch (err) {
     $('change').textContent = 'Could not load price data. Please refresh the page.';
