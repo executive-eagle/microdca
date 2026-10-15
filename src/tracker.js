@@ -118,17 +118,42 @@ const sound = (() => {
   // sound starts off on every visit (browsers only allow audio after a tap anyway)
   on = false;
   sync();
-  /** A short, quiet two-tone "clink". */
+  /** Shared helper: one oscillator with a pitch path and a quick volume envelope. */
+  function tone(type, freqs, dur, gain = 0.08, at = 0) {
+    const now = ac.currentTime + at, o = ac.createOscillator(), v = ac.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freqs[0], now);
+    freqs.slice(1).forEach((f, i) => o.frequency.exponentialRampToValueAtTime(f, now + (dur * (i + 1)) / (freqs.length - 1)));
+    v.gain.setValueAtTime(0.0001, now); v.gain.exponentialRampToValueAtTime(gain, now + 0.012); v.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    o.connect(v).connect(ac.destination); o.start(now); o.stop(now + dur + 0.02);
+    return o;
+  }
+  // a rotating cast of dumb cartoon noises for every coin
+  const SILLY = [
+    () => { const o = tone('sine', [220, 880, 330, 660, 440], 0.32, 0.09); const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = 28; lg.gain.value = 60; lfo.connect(lg).connect(o.frequency); lfo.start(); lfo.stop(ac.currentTime + 0.34); }, // boing
+    () => { tone('square', [1500, 2400, 1900], 0.12, 0.035); }, // rubber duck squeak
+    () => { tone('sawtooth', [420, 300, 260], 0.16, 0.05); tone('sawtooth', [630, 450], 0.12, 0.025); }, // quack
+    () => { tone('sine', [180, 720], 0.09, 0.12); }, // bloop
+    () => { tone('sawtooth', [233, 247, 233], 0.22, 0.05); tone('square', [466, 494], 0.2, 0.02); }, // kazoo honk
+  ];
+  /** Was a "clink"; now something much dumber. */
   function clink() {
     if (!on || !ac) return;
     const now = ac.currentTime;
-    if (now - last < 0.07) return;
+    if (now - last < 0.09) return;
     last = now;
-    for (const [f, g] of [[2093, 0.05], [3136, 0.03]]) {
-      const o = ac.createOscillator(), v = ac.createGain();
-      o.type = 'sine'; o.frequency.value = f * (0.97 + Math.random() * 0.06);
-      v.gain.setValueAtTime(g, now); v.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
-      o.connect(v).connect(ac.destination); o.start(now); o.stop(now + 0.17);
+    SILLY[(Math.random() * SILLY.length) | 0]();
+  }
+  /** Slide whistle up (big buys). */
+  function whistle() { if (!on || !ac) return; tone('sine', [520, 2200], 0.55, 0.07); }
+  /** A ridiculous air horn (mega buys): three stacked detuned saws, honked twice. */
+  function airhorn() {
+    if (!on || !ac) return;
+    for (const at of [0, 0.32]) for (const f of [466, 470, 587]) {
+      const now = ac.currentTime + at, o = ac.createOscillator(), v = ac.createGain();
+      o.type = 'sawtooth'; o.frequency.setValueAtTime(f * 0.92, now); o.frequency.exponentialRampToValueAtTime(f, now + 0.05);
+      v.gain.setValueAtTime(0.0001, now); v.gain.exponentialRampToValueAtTime(0.035, now + 0.03); v.gain.setValueAtTime(0.035, now + 0.24); v.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+      o.connect(v).connect(ac.destination); o.start(now); o.stop(now + 0.32);
     }
   }
   /** A short low "boom" for big buys: filtered noise with a fast decay. */
@@ -153,7 +178,7 @@ const sound = (() => {
     src.buffer = buf; hp.type = 'highpass'; hp.frequency.value = 700; v.gain.value = 0.12;
     src.connect(hp).connect(v).connect(ac.destination); src.start(now);
   }
-  return { clink, boom, pop };
+  return { clink, boom, pop, whistle, airhorn };
 })();
 
 const jar = (() => {
@@ -161,7 +186,22 @@ const jar = (() => {
   const CW = 30, CH = 10, TH = 4; // coin width, face height, thickness
   const SATS_PER_COIN = 1_000_000; // each coin is 1,000,000 sats = 0.01 BTC
   let W = 0, H = 0, unit = SATS_PER_COIN / 1e8, cols = [], coins = [], falling = [], pops = [], raf = null;
-  let sparks = [], rings = [], rockets = [];
+  let sparks = [], rings = [], rockets = [], speedUntil = 0, speedPower = 1;
+  /** Anime "focus" lines rushing toward the center. */
+  function drawSpeedLines(now) {
+    if (now > speedUntil) return false;
+    const cx = W / 2, cy = H * 0.42, R = Math.hypot(W, H);
+    ctx.save();
+    const n = Math.round(70 * speedPower);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, inner = (0.18 + Math.random() * 0.25) * Math.min(W, H), w = 0.6 + Math.random() * 2.6 * speedPower;
+      ctx.strokeStyle = Math.random() < 0.85 ? `rgba(255,255,255,${0.12 + Math.random() * 0.35})` : 'rgba(255,190,90,0.45)';
+      ctx.lineWidth = w;
+      ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R); ctx.lineTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner); ctx.stroke();
+    }
+    ctx.restore();
+    return true;
+  }
   const PALETTES = [['#F7931A', '#FFD27A', '#FFFFFF'], ['#00C805', '#B6FF9E', '#FFFFFF'], ['#5B8DEF', '#A9C4FF', '#FFFFFF'], ['#22C3D6', '#9DF3FF', '#FFFFFF'], ['#FF4FA3', '#FFC2E1', '#FFFFFF'], ['#FFD24A', '#FFF3B0', '#FF9F1C']];
   // points of a "₿" glyph, for the bitcoin-shaped burst
   const BTC_SHAPE = (() => {
@@ -333,6 +373,7 @@ const jar = (() => {
     coins.sort((a, b) => a.y - b.y);
     for (const c of coins) coin(c.x, c.y, A[c.t].color);
     let busy = drain(now);
+    if (drawSpeedLines(now)) busy = true;
     falling = falling.filter((f) => {
       if (now < f.t0) { busy = true; return true; }
       const k = Math.min(1, (now - f.t0) / f.ms), e = k * k;
@@ -396,6 +437,7 @@ const jar = (() => {
     get unit() { return unit; },
     explode,
     rocket,
+    speed(ms = 500, power = 1) { if (reduceMotion) return; speedUntil = Math.max(speedUntil, performance.now() + ms); speedPower = power; kick(); },
     /** Where the top of the pile is, and how wide the jar is (for placing effects). */
     get pileTop() { return H - 10 - Math.max(0, ...(cols.length ? cols : [0])) * TH; },
     get size() { return { W, H }; },
@@ -508,27 +550,46 @@ const stack = (() => {
 
 
 /* ================= the party: bulls dance, bears fall over ================= */
-const BULL = `<svg viewBox="0 0 80 80" class="bull-svg"><g class="legs"><rect x="27" y="62" width="8" height="14" rx="3" fill="#B8650A"/><rect x="45" y="62" width="8" height="14" rx="3" fill="#B8650A"/></g>
+// Anime-style characters. Optional parts are toggled by state classes in CSS:
+// bull: .eyes-anime .mouth-happy (default) | .eyes-closed .tear .mouth-sad (sleepy)
+// bear: .eyes-anime .mouth-cat (default) | .hat .eyes-happy .mouth-open (party) | .eyes-swirl .sweat .mouth-sad (knocked)
+const BULL = `<svg viewBox="-4 -16 88 100" class="bull-svg">
+  <g class="legs"><rect x="27" y="62" width="8" height="14" rx="3" fill="#B8650A"/><rect x="45" y="62" width="8" height="14" rx="3" fill="#B8650A"/></g>
   <ellipse cx="40" cy="58" rx="20" ry="13" fill="#F7931A"/><text x="40" y="63" text-anchor="middle" font-size="13" font-weight="800" fill="#7A3E00" font-family="DM Sans,sans-serif">₿</text>
-  <path d="M22 22C10 20 6 10 10 4c2 7 8 11 16 12z" fill="#FFF1D6"/><path d="M58 22c12-2 16-12 12-18-2 7-8 11-16 12z" fill="#FFF1D6"/>
-  <ellipse cx="40" cy="30" rx="19" ry="17" fill="#F7931A"/><ellipse cx="22" cy="24" rx="6" ry="4" fill="#E07E0C" transform="rotate(-25 22 24)"/><ellipse cx="58" cy="24" rx="6" ry="4" fill="#E07E0C" transform="rotate(25 58 24)"/>
-  <g class="shades"><rect x="25" y="22" width="13" height="8" rx="3" fill="#111"/><rect x="42" y="22" width="13" height="8" rx="3" fill="#111"/><rect x="37" y="24" width="6" height="2" fill="#111"/><rect x="27" y="23" width="4" height="2" fill="#555"/><rect x="44" y="23" width="4" height="2" fill="#555"/></g>
-  <g class="eyes-closed" stroke="#7A3E00" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M28 27q4 3 8 0"/><path d="M44 27q4 3 8 0"/></g>
-  <path class="tear" d="M31 31q-2 4 0 6q2 -2 0 -6z" fill="#7EC8FF"/>
-  <ellipse cx="40" cy="39" rx="11" ry="7.5" fill="#FFD3A0"/><ellipse cx="36" cy="38" rx="1.8" ry="2.4" fill="#7A3E00"/><ellipse cx="44" cy="38" rx="1.8" ry="2.4" fill="#7A3E00"/>
-  <circle cx="40" cy="45" r="4" fill="none" stroke="#FFD24A" stroke-width="2"/>
-  <path class="mouth-happy" d="M35 43q5 4 10 0" stroke="#7A3E00" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-  <path class="mouth-sad" d="M35 45q5 -3.5 10 0" stroke="#7A3E00" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>`;
-const BEAR = `<svg viewBox="0 0 80 80" class="bear-svg"><rect x="27" y="62" width="9" height="14" rx="4" fill="#5E3B20"/><rect x="44" y="62" width="9" height="14" rx="4" fill="#5E3B20"/>
+  <path d="M20 20C8 18 3 9 7 2c2 7 8 10 15 11z" fill="#FFF1D6"/><path d="M60 20c12-2 17-11 13-18-2 7-8 10-15 11z" fill="#FFF1D6"/>
+  <path class="hair" d="M17 18 L13 -4 L25 8 L28 -14 L36 5 L41 -16 L46 5 L54 -13 L56 8 L68 -4 L63 18 Z" fill="#FFD24A" stroke="#D99A00" stroke-width="1.5" stroke-linejoin="round"/>
+  <ellipse cx="40" cy="30" rx="20" ry="18" fill="#F7931A"/>
+  <ellipse cx="20" cy="25" rx="6" ry="4" fill="#E07E0C" transform="rotate(-25 20 25)"/><ellipse cx="60" cy="25" rx="6" ry="4" fill="#E07E0C" transform="rotate(25 60 25)"/>
+  <g class="headband"><rect x="20" y="13" width="40" height="6" rx="2" fill="#E53935"/><rect x="35" y="13.5" width="10" height="5" rx="1" fill="#C9CED3"/><text x="40" y="18" text-anchor="middle" font-size="5.5" font-weight="800" fill="#333" font-family="DM Sans,sans-serif">₿</text>
+    <path d="M60 15 q8 2 12 -3 M60 17 q9 5 14 2" stroke="#E53935" stroke-width="2.6" fill="none" stroke-linecap="round"/></g>
+  <g class="eyes-anime">
+    <path d="M24 21 L35 24" stroke="#5A2A00" stroke-width="2.2" stroke-linecap="round"/><path d="M56 21 L45 24" stroke="#5A2A00" stroke-width="2.2" stroke-linecap="round"/>
+    <ellipse cx="31" cy="30" rx="5.2" ry="6.6" fill="#fff"/><ellipse cx="49" cy="30" rx="5.2" ry="6.6" fill="#fff"/>
+    <ellipse cx="31.5" cy="31" rx="4.1" ry="5.4" fill="#2D6BFF"/><ellipse cx="48.5" cy="31" rx="4.1" ry="5.4" fill="#2D6BFF"/>
+    <ellipse cx="31.5" cy="32" rx="2.2" ry="3" fill="#0B1E5B"/><ellipse cx="48.5" cy="32" rx="2.2" ry="3" fill="#0B1E5B"/>
+    <circle cx="33" cy="28.5" r="1.7" fill="#fff"/><circle cx="50" cy="28.5" r="1.7" fill="#fff"/><circle cx="30" cy="34" r="0.9" fill="#fff"/><circle cx="47" cy="34" r="0.9" fill="#fff"/></g>
+  <g class="eyes-closed" stroke="#5A2A00" stroke-width="2" fill="none" stroke-linecap="round"><path d="M26 30q5 4 10 0"/><path d="M44 30q5 4 10 0"/><path d="M25 24l9 2M55 24l-9 2"/></g>
+  <g class="tear"><path d="M28 33 q-1 10 0 26 l3 0 q1 -16 0 -26 z" fill="#7EC8FF" opacity="0.9"/><path d="M52 33 q1 10 0 26 l-3 0 q-1 -16 0 -26 z" fill="#7EC8FF" opacity="0.9"/></g>
+  <g class="blush" fill="#FF6B8B" opacity="0.55"><ellipse cx="23" cy="38" rx="4" ry="2.2"/><ellipse cx="57" cy="38" rx="4" ry="2.2"/></g>
+  <ellipse cx="40" cy="41" rx="10" ry="6.5" fill="#FFD3A0"/><ellipse cx="36.5" cy="40" rx="1.6" ry="2.1" fill="#7A3E00"/><ellipse cx="43.5" cy="40" rx="1.6" ry="2.1" fill="#7A3E00"/>
+  <circle cx="40" cy="46" r="3.6" fill="none" stroke="#FFD24A" stroke-width="2"/>
+  <path class="mouth-happy" d="M33 45 q7 9 14 0 z" fill="#8A1C1C"/>
+  <path class="mouth-sad" d="M34 47 q2 -2 4 0 q2 2 4 0 q2 -2 4 0" stroke="#7A3E00" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>`;
+const BEAR = `<svg viewBox="0 -14 80 94" class="bear-svg">
+  <rect x="27" y="62" width="9" height="14" rx="4" fill="#5E3B20"/><rect x="44" y="62" width="9" height="14" rx="4" fill="#5E3B20"/>
   <ellipse cx="40" cy="57" rx="19" ry="14" fill="#7A4E2D"/><ellipse cx="40" cy="60" rx="11" ry="8" fill="#A7764C"/>
-  <circle cx="25" cy="15" r="7" fill="#7A4E2D"/><circle cx="55" cy="15" r="7" fill="#7A4E2D"/><circle cx="25" cy="15" r="3.5" fill="#C79A6B"/><circle cx="55" cy="15" r="3.5" fill="#C79A6B"/>
-  <circle cx="40" cy="30" r="18" fill="#7A4E2D"/><ellipse cx="40" cy="37" rx="9" ry="7" fill="#C79A6B"/><ellipse cx="40" cy="34" rx="3.6" ry="2.6" fill="#222"/>
-  <g class="hat"><path d="M33 13L41 -8L49 13z" fill="#FF4FA3"/><path d="M36 6l10 2M38 0l7 1.5" stroke="#FFD24A" stroke-width="2"/><circle cx="41" cy="-9" r="3.2" fill="#FFD24A"/></g>
-  <g class="eyes-open"><circle cx="33" cy="26" r="2.2" fill="#111"/><circle cx="47" cy="26" r="2.2" fill="#111"/></g>
-  <g class="eyes-happy" stroke="#111" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M30 27q3 -4 6 0"/><path d="M44 27q3 -4 6 0"/></g>
-  <g class="eyes-x" stroke="#111" stroke-width="1.8" stroke-linecap="round"><path d="M30.5 23.5l5 5M35.5 23.5l-5 5"/><path d="M44.5 23.5l5 5M49.5 23.5l-5 5"/></g>
-  <path class="mouth-sad" d="M36 41q4 -3 8 0" stroke="#3B2412" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-  <path class="mouth-happy" d="M34 39q6 6 12 0z" fill="#3B2412"/></svg>`;
+  <circle cx="24" cy="14" r="7.5" fill="#7A4E2D"/><circle cx="56" cy="14" r="7.5" fill="#7A4E2D"/><circle cx="24" cy="14" r="4" fill="#E9A3A3"/><circle cx="56" cy="14" r="4" fill="#E9A3A3"/>
+  <circle cx="40" cy="30" r="19" fill="#7A4E2D"/><ellipse cx="40" cy="38" rx="9" ry="6.5" fill="#C79A6B"/><ellipse cx="40" cy="35" rx="3.4" ry="2.4" fill="#222"/>
+  <g class="hat"><path d="M33 13L41 -10L49 13z" fill="#FF4FA3"/><path d="M36 6l10 2M38 0l7 1.5" stroke="#FFD24A" stroke-width="2"/><circle cx="41" cy="-11" r="3.2" fill="#FFD24A"/></g>
+  <g class="eyes-anime"><ellipse cx="31" cy="27" rx="4.6" ry="5.6" fill="#111"/><ellipse cx="49" cy="27" rx="4.6" ry="5.6" fill="#111"/>
+    <circle cx="32.6" cy="25" r="1.9" fill="#fff"/><circle cx="50.6" cy="25" r="1.9" fill="#fff"/><circle cx="29.8" cy="29.5" r="1" fill="#fff"/><circle cx="47.8" cy="29.5" r="1" fill="#fff"/></g>
+  <g class="eyes-happy" stroke="#111" stroke-width="2.2" fill="none" stroke-linecap="round"><path d="M27 28q4 -6 8 0"/><path d="M45 28q4 -6 8 0"/></g>
+  <g class="eyes-swirl" stroke="#111" stroke-width="1.4" fill="none" stroke-linecap="round"><path d="M31 27 m-0.5 0 a0.5 0.5 0 1 1 1 0 a1.5 1.5 0 1 1 -3 0 a2.5 2.5 0 1 1 5 0 a3.5 3.5 0 1 1 -7 0"/><path d="M49 27 m-0.5 0 a0.5 0.5 0 1 1 1 0 a1.5 1.5 0 1 1 -3 0 a2.5 2.5 0 1 1 5 0 a3.5 3.5 0 1 1 -7 0"/></g>
+  <path class="sweat" d="M60 18 q4 6 0 9 q-4 -3 0 -9z" fill="#7EC8FF"/>
+  <g class="blush" fill="#FF6B8B" opacity="0.6"><ellipse cx="24" cy="36" rx="4" ry="2.2"/><ellipse cx="56" cy="36" rx="4" ry="2.2"/></g>
+  <path class="mouth-cat" d="M35.5 40 q2.2 3 4.5 0 q2.3 3 4.5 0" stroke="#3B2412" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+  <path class="mouth-open" d="M34 39 q6 8 12 0z" fill="#8A1C1C"/>
+  <path class="mouth-sad" d="M36 43q4 -3 8 0" stroke="#3B2412" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>`;
 
 const fx = (() => {
   const layer = $('fx'), jarEl = document.querySelector('.jar');
@@ -549,7 +610,8 @@ const fx = (() => {
     bull(delay = 0) {
       setTimeout(() => {
         const left = 6 + Math.random() * 78;
-        spawn('bull', BULL, 3400, { left: `${left}%`, '--flip': Math.random() < 0.5 ? -1 : 1 });
+        const el = spawn('bull', BULL, 3400, { left: `${left}%`, '--flip': Math.random() < 0.5 ? -1 : 1 });
+        if (el && document.getElementById('today-big').classList.contains('aura')) el.classList.add('ssj');
       }, delay);
     },
     /** A bear wanders in from a side, wobbles, and falls over seeing stars. */
@@ -559,6 +621,39 @@ const fx = (() => {
         const el = spawn(`bear ${fromLeft ? 'from-left' : 'from-right'}`, BEAR + '<span class="stars">✦ ✧ ✦</span>', 4200, { left: fromLeft ? '14%' : '70%' });
         if (el) setTimeout(() => el.classList.add('knocked'), 1500);
       }, delay);
+    },
+    /** Manga sound effect text that slams onto the screen. */
+    sfx(text, { x = 20 + Math.random() * 60, y = 18 + Math.random() * 40, size = 1, rot = (Math.random() - 0.5) * 24, color = '#FFE14D', ms = 1300 } = {}) {
+      if (reduceMotion) return;
+      const el = document.createElement('div');
+      el.className = 'sfx';
+      el.textContent = text;
+      Object.assign(el.style, { left: `${x}%`, top: `${y}%`, '--rot': `${rot}deg`, '--size': size, '--c': color });
+      layer.append(el);
+      setTimeout(() => el.remove(), ms);
+    },
+    /** Anime attack cut-in: a slanted banner slashes across with the bull's face. */
+    cutin(title, sub) {
+      if (reduceMotion || layer.querySelector('.cutin')) return;
+      const el = document.createElement('div');
+      el.className = 'cutin';
+      el.innerHTML = `<div class="cutin-band"><div class="cutin-face">${BULL}</div><div class="cutin-text"><b>${title}</b><span>${sub}</span></div></div>`;
+      layer.append(el);
+      setTimeout(() => el.remove(), 2100);
+    },
+    /** Impact frames: a couple of high-contrast inverted flashes. */
+    impact() {
+      if (reduceMotion) return;
+      jarEl.classList.remove('impact'); void jarEl.offsetWidth; jarEl.classList.add('impact');
+      setTimeout(() => jarEl.classList.remove('impact'), 420);
+    },
+    /** Golden power-up aura on the big number (and any dancing bulls). */
+    powerUp(ms = 2600) {
+      if (reduceMotion) return;
+      const big = document.getElementById('today-big');
+      big.classList.add('aura');
+      layer.querySelectorAll('.critter.bull').forEach((b) => b.classList.add('ssj'));
+      clearTimeout(big._aura); big._aura = setTimeout(() => big.classList.remove('aura'), ms);
     },
     /** Whole-jar flash and shake for a mega buy. */
     mega() {
@@ -582,17 +677,36 @@ const fx = (() => {
     },
     /** A bear in a party hat dances (the ATM is paused, so bears are winning). */
     happyBear(delay = 0) {
-      setTimeout(() => spawn('bear happy', BEAR, 3400, { left: `${8 + Math.random() * 64}%`, '--flip': Math.random() < 0.5 ? -1 : 1 }), delay);
+      setTimeout(() => {
+        const left = 8 + Math.random() * 64;
+        spawn('bear happy', BEAR, 3400, { left: `${left}%`, '--flip': Math.random() < 0.5 ? -1 : 1 });
+        if (Math.random() < 0.7) this.sfx('ゴゴゴゴ', { x: Math.min(80, left + 6), y: 52 + Math.random() * 10, size: 0.7, rot: -8, color: '#C9A0FF', ms: 2200 });
+      }, delay);
     },
   };
 })();
+
+let over9000Shown = false;
+/** Classic: when today's coin count passes 9,000. */
+function checkOver9000(coinsToday) {
+  if (over9000Shown || coinsToday <= 9000) return;
+  over9000Shown = true;
+  fx.impact(); jar.speed(1500, 1.8); fx.powerUp(3200);
+  fx.cutin("IT'S OVER 9,000!!", `${coinsToday.toLocaleString()} coins of 1M sats today`);
+  fx.sfx('ドドドドドド', { x: 50, y: 64, size: 1, rot: 0, color: '#FF4FA3', ms: 2000 });
+  sound.boom(1.8); sound.airhorn();
+}
 
 /** How big a party a buy gets: sparks always, bulls often, explosions + falling bears for big ones. */
 function celebrate(t, btc) {
   const { W } = jar.size, y = jar.pileTop - 6;
   const x = W * (0.25 + Math.random() * 0.5);
   if (btc >= 25) {
-    // the finale
+    // the finale, anime edition
+    fx.impact(); jar.speed(1400, 1.6); fx.powerUp(); sound.airhorn();
+    fx.cutin('BULL MODE: ACTIVATED!!', '超強気 · super bullish');
+    fx.sfx('バァーン!!', { x: 50, y: 30, size: 1.6, rot: -8, ms: 1600 });
+    setTimeout(() => fx.sfx('ドドドド', { x: 22, y: 60, size: 0.9, rot: 10, color: '#FF9F1C' }), 500);
     jar.explode(W / 2, y, 3.2); setTimeout(() => jar.explode(W * 0.3, y - 20, 2), 160); setTimeout(() => jar.explode(W * 0.7, y - 30, 2), 320);
     fx.mega(); sound.boom(1.6);
     jar.rocket('btc', 0);
@@ -600,7 +714,9 @@ function celebrate(t, btc) {
     setTimeout(() => { fx.mega(); sound.boom(1.2); jar.rocket('btc', 0); jar.rocket('willow', 120); jar.rocket('ring', 240); }, 1500);
     fx.bull(0); fx.bull(250); fx.bull(500); fx.bull(750); fx.bear(200); fx.bear(900);
   } else if (btc >= 5) {
-    jar.explode(x, y, 2); sound.boom(1);
+    jar.explode(x, y, 2); sound.boom(1); sound.whistle();
+    jar.speed(450, 1);
+    fx.sfx(Math.random() < 0.5 ? 'ドン!' : 'ズドン!', { size: 1.1 });
     for (let i = 0; i < 3; i++) jar.rocket(null, i * 180);
     fx.bull(0);
     if (Math.random() < 0.6) fx.bear(150);
@@ -608,6 +724,7 @@ function celebrate(t, btc) {
     jar.explode(x, y, 1);
     if (Math.random() < 0.45) jar.rocket();
     if (Math.random() < 0.35) fx.bull(0);
+    if (Math.random() < 0.25) fx.sfx(Math.random() < 0.5 ? 'キラッ' : 'ドド', { size: 0.6, color: Math.random() < 0.5 ? '#FFE14D' : '#9DF3FF', ms: 1000 });
   }
 }
 
@@ -876,6 +993,7 @@ function recompute(fromPoll = false) {
       const prev = lastToday[t]?.btc ?? today[t].btc, d = today[t].btc - prev;
       if (d > 0.0005) { jar.add(t, d, prev); celebrate(t, d); stack.sparkle(t, `+${num(d, 2)} BTC`); }
     }
+    checkOver9000(Math.floor(T.reduce((a, t) => a + today[t].btc, 0) * 100));
     drawPerMinute();
     renderDaysTable();
   }
@@ -942,6 +1060,7 @@ function runPreview() {
   if (preview) return;
   const fake = Object.fromEntries(T.map((t) => [t, 0]));
   preview = { t0: performance.now(), n: 0 };
+  over9000Shown = false;
   $('preview').disabled = true;
   fx.paused(false);
   $('today-sub').innerHTML = '<b class="o">Preview</b> · made-up numbers, not real data';
@@ -950,6 +1069,7 @@ function runPreview() {
     const el = performance.now() - preview.t0;
     if (el > 16000) {
       preview = null; $('preview').disabled = false;
+      over9000Shown = T.reduce((a, t) => a + today[t].btc, 0) * 100 > 9000; // don't re-fire for real data
       jar.set(Object.fromEntries(T.map((t) => [t, today[t].btc])));
       renderTodayReadout();
       return;
@@ -959,6 +1079,7 @@ function runPreview() {
     // every so often, a big buy or a mega buy
     const d = preview.n % 9 === 0 ? 30 + Math.random() * 15 : preview.n % 4 === 0 ? 6 + Math.random() * 4 : 0.3 + Math.random() * 2.7;
     jar.add(t, d, fake[t]); celebrate(t, d); fake[t] += d;
+    checkOver9000(Math.floor(Object.values(fake).reduce((a, b) => a + b, 0) * 100));
     const sum = Object.values(fake).reduce((a, b) => a + b, 0);
     todayBig(`+${num(sum, sum >= 100 ? 2 : 4)} BTC`);
     $('today-split').innerHTML = T.map((x) => `<span><i class="dot" style="background:${A[x].color}"></i>${x} ${num(fake[x], 1)}</span>`).join('');

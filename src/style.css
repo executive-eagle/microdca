@@ -742,9 +742,100 @@ html, body { overflow-x: clip; }
 .jar-readout::before { content: ''; position: absolute; left: 50%; top: -14px; width: min(560px, 92%); height: 150px; transform: translateX(-50%); z-index: -1;
   background: radial-gradient(closest-side, rgba(0,0,0,0.78), rgba(0,0,0,0.45) 60%, transparent); filter: blur(4px); }
 :root[data-theme='light'] .jar-readout::before { background: radial-gradient(closest-side, rgba(255,255,255,0.9), rgba(255,255,255,0.55) 60%, transparent); }
-.jar-big { text-shadow: 0 0 18px rgba(0,0,0,0.55), 0 2px 24px rgba(247,147,26,0.25); }
+.jar-big { text-shadow: none; filter: drop-shadow(0 2px 14px rgba(0,0,0,0.6)); }
 .jar .fx { z-index: 1; }
 /* outline around the big number so it reads over the coin storm */
 .jar-big { -webkit-text-stroke: 4px #000; paint-order: stroke fill; }
 .jar-big .d > span > i, .jar-big .s { -webkit-text-stroke: inherit; paint-order: stroke fill; }
 :root[data-theme='light'] .jar-big { -webkit-text-stroke: 4px #fff; }
+
+/* ================= ATM Tracker: anime mode ================= */
+/* manga sound effects */
+.sfx { position: absolute; transform: translate(-50%, -50%) rotate(var(--rot)) scale(0); z-index: 3; pointer-events: none; white-space: nowrap;
+  font-family: 'Hiragino Kaku Gothic StdN', 'Hiragino Sans', 'Yu Gothic', 'Noto Sans JP', 'Arial Black', sans-serif; font-weight: 900;
+  font-size: calc(46px * var(--size)); letter-spacing: 0.02em; color: var(--c);
+  -webkit-text-stroke: calc(5px * var(--size)) #000; paint-order: stroke fill; text-shadow: calc(5px * var(--size)) calc(5px * var(--size)) 0 #E53935;
+  animation: sfx-slam 1.3s cubic-bezier(.2,1.6,.4,1) forwards; }
+@keyframes sfx-slam {
+  0% { transform: translate(-50%, -50%) rotate(var(--rot)) scale(2.6); opacity: 0; }
+  12% { transform: translate(-50%, -50%) rotate(var(--rot)) scale(0.92); opacity: 1; }
+  18% { transform: translate(calc(-50% + 4px), calc(-50% - 3px)) rotate(var(--rot)) scale(1.04); }
+  24% { transform: translate(calc(-50% - 4px), calc(-50% + 2px)) rotate(var(--rot)) scale(1); }
+  30% { transform: translate(-50%, -50%) rotate(var(--rot)) scale(1); }
+  80% { opacity: 1; }
+  100% { transform: translate(-50%, -60%) rotate(var(--rot)) scale(1.08); opacity: 0; }
+}
+@media (max-width: 600px) { .sfx { font-size: calc(32px * var(--size)); } }
+
+/* attack cut-in banner */
+.cutin { position: absolute; inset: 0; z-index: 4; pointer-events: none; display: grid; place-items: center; overflow: hidden; }
+.cutin-band { position: relative; width: 140%; height: 46%; transform: skewY(-9deg) translateX(110%); display: flex; align-items: center; gap: 4%; padding: 0 18%;
+  background: repeating-linear-gradient(90deg, rgba(255,255,255,0.12) 0 2px, transparent 2px 22px), linear-gradient(90deg, #120400, #B3122E 35%, #F7931A 70%, #FFD24A);
+  border-top: 6px solid #fff; border-bottom: 6px solid #fff; box-shadow: 0 0 0 4px #000, 0 20px 60px rgba(0,0,0,0.6);
+  animation: cutin 2.1s cubic-bezier(.2,.9,.2,1) forwards; }
+.cutin-band::before { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 40px, rgba(255,255,255,0.25) 40px 42px); animation: lines 0.25s linear infinite; }
+@keyframes lines { to { background-position: -42px 0; } }
+@keyframes cutin { 0% { transform: skewY(-9deg) translateX(110%); } 16% { transform: skewY(-9deg) translateX(0); } 78% { transform: skewY(-9deg) translateX(-4%); } 100% { transform: skewY(-9deg) translateX(-130%); } }
+.cutin-face { width: 22%; max-width: 150px; aspect-ratio: 1; flex: none; transform: skewY(9deg) scale(1.25); filter: drop-shadow(4px 4px 0 #000); }
+.cutin-face svg { width: 100%; height: 100%; overflow: visible; }
+.cutin-face .eyes-closed, .cutin-face .tear, .cutin-face .mouth-sad { display: none; }
+.cutin-text { transform: skewY(9deg); display: grid; gap: 4px; }
+.cutin-text b { font-family: 'Arial Black', 'DM Sans', sans-serif; font-weight: 900; font-size: clamp(22px, 4.6vw, 48px); color: #fff; font-style: italic; letter-spacing: 0.01em;
+  -webkit-text-stroke: 3px #000; paint-order: stroke fill; text-shadow: 4px 4px 0 #000; line-height: 1; }
+.cutin-text span { font-weight: 800; font-size: clamp(13px, 2vw, 20px); color: #FFE14D; -webkit-text-stroke: 2px #000; paint-order: stroke fill; }
+
+/* impact frames: two hard inverted flashes */
+.jar.impact canvas, .jar.impact .fx { animation: impact 0.42s steps(1) forwards; }
+@keyframes impact { 0% { filter: invert(1) contrast(3) grayscale(1); } 18% { filter: none; } 36% { filter: invert(1) contrast(4) grayscale(1) brightness(1.3); } 54%, 100% { filter: none; } }
+
+/* power-up aura on the big number */
+/* (a filter glows around the glyph shapes; text-shadow would be clipped into boxes by the rolling-digit slots) */
+.jar-big.aura { animation: aura 0.16s steps(2) infinite; text-shadow: none; }
+@keyframes aura {
+  0% { filter: drop-shadow(0 0 6px #FFF6A0) drop-shadow(0 0 16px #FFD24A) drop-shadow(0 -8px 22px #FF9F1C); }
+  100% { filter: drop-shadow(0 0 9px #FFFFFF) drop-shadow(0 0 24px #FFE14D) drop-shadow(0 -14px 30px #FF7A00); }
+}
+/* Super Saiyan bulls */
+.critter.bull.ssj svg { filter: drop-shadow(0 0 6px #FFE14D) drop-shadow(0 0 14px #FFD24A) brightness(1.15) saturate(1.2); }
+.critter.bull.ssj::before { content: ''; position: absolute; left: 50%; bottom: 10%; width: 120%; height: 140%; transform: translateX(-50%); z-index: -1;
+  background: radial-gradient(ellipse at 50% 80%, rgba(255,240,140,0.85), rgba(255,200,40,0.45) 40%, transparent 70%); border-radius: 50% 50% 40% 40%;
+  animation: ssj 0.12s steps(2) infinite; }
+@keyframes ssj { 0% { transform: translateX(-50%) scaleY(1); opacity: 0.85; } 100% { transform: translateX(-50%) scaleY(1.18) scaleX(0.94); opacity: 1; } }
+@media (max-width: 600px) {
+  .cutin-band { width: 170%; padding: 0 0 0 38%; gap: 3%; }
+  .cutin-face { width: 16%; }
+  .cutin-text { max-width: 46%; }
+  .cutin-text b { font-size: 21px; white-space: normal; line-height: 1.05; }
+  .cutin-text span { font-size: 12px; }
+}
+@media (max-width: 600px) {
+  .cutin-band { padding-left: 33%; }
+  .cutin-face { width: 14%; }
+  .cutin-text { max-width: 150px; }
+  .cutin-text b { font-size: 19px; }
+}
+
+/* ================= anime characters: which face parts show in which state ================= */
+.critter svg .tear, .critter svg .eyes-closed, .critter svg .mouth-sad,
+.critter svg .hat, .critter svg .eyes-happy, .critter svg .mouth-open, .critter svg .eyes-swirl, .critter svg .sweat,
+.cutin-face svg .tear, .cutin-face svg .eyes-closed, .cutin-face svg .mouth-sad { display: none; }
+.critter svg .eyes-anime, .critter svg .mouth-happy, .critter svg .mouth-cat, .critter svg .blush, .critter svg .hair, .critter svg .headband { display: inline; }
+/* sad sleeping bull */
+.critter.sleepy svg .eyes-anime, .critter.sleepy svg .mouth-happy, .critter.sleepy svg .blush { display: none; }
+.critter.sleepy svg .eyes-closed, .critter.sleepy svg .tear, .critter.sleepy svg .mouth-sad { display: inline; }
+.critter.sleepy svg .hair { opacity: 0.6; }
+/* party bear */
+.critter.bear.happy svg .eyes-anime, .critter.bear.happy svg .mouth-cat { display: none; }
+.critter.bear.happy svg .hat, .critter.bear.happy svg .eyes-happy, .critter.bear.happy svg .mouth-open { display: inline; }
+/* knocked-out bear */
+.critter.bear.knocked svg .eyes-anime, .critter.bear.knocked svg .mouth-cat, .critter.bear.knocked svg .blush { display: none; }
+.critter.bear.knocked svg .eyes-swirl, .critter.bear.knocked svg .sweat, .critter.bear.knocked svg .mouth-sad { display: inline; }
+.critter.bear.knocked svg .eyes-swirl path { transform-box: fill-box; transform-origin: center; animation: swirl 0.6s linear infinite; }
+@keyframes swirl { to { transform: rotate(360deg); } }
+/* headband tails flutter while the bull dances */
+.critter.bull svg .headband path { animation: flutter 0.18s ease-in-out infinite alternate; transform-origin: 60px 16px; }
+@keyframes flutter { to { transform: rotate(-12deg) scaleX(1.08); } }
+.critter { width: 80px; height: 90px; }
+@media (max-width: 600px) { .critter { width: 62px; height: 70px; } }
+@media (max-width: 600px) { .cutin-band { padding-left: 42%; } }
+@media (max-width: 600px) { .cutin-band { padding-left: 49%; } }
