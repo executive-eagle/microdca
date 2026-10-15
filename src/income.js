@@ -21,11 +21,11 @@ const state = {
 };
 
 /* ---------- persistence (per-browser convenience only) ---------- */
-function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ buckets: state.buckets, route: state.route, compare: state.compare, margin: state.margin })); } catch {} }
+function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ buckets: state.buckets, savedSplit: state.savedSplit, route: state.route, compare: state.compare, margin: state.margin })); } catch {} }
 function restore() {
   try {
     const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-    if (s?.buckets?.length) Object.assign(state, { buckets: s.buckets, route: s.route || 'paid', compare: s.compare || 'BTC', margin: s.margin || state.margin });
+    if (s?.buckets?.length) Object.assign(state, { buckets: s.buckets, savedSplit: s.savedSplit || null, route: s.route || 'paid', compare: s.compare || 'BTC', margin: s.margin || state.margin });
   } catch {}
 }
 
@@ -281,10 +281,13 @@ const PAYOUT_CHOICES = [
   { key: 'same', label: 'Reinvest it', d: 'Payouts buy more of the same funds, so the next payout is bigger. Grows fastest.' },
   { key: 'buy:BTC', label: 'Turn it into bitcoin', d: 'Every payout buys a little bitcoin.' },
   { key: 'cash', label: 'Pay me in cash', d: 'Keep the payouts as spending money. Your income stays flat.' },
+  { key: 'split', label: 'Split it up', d: 'Send parts to more income funds, bitcoin or IBIT, paying down margin, or bills. Set it up under "Where your payouts go".' },
 ];
+const SINGLE = new Set(['same', 'buy:BTC', 'cash']);
+const isSplit = () => !(state.buckets.length === 1 && SINGLE.has(bucketKey(state.buckets[0])));
 const sameMix = (a, b) => TICKERS.every((t) => (a[t] || 0) === (b[t] || 0));
 const activeStyle = () => STYLES.find((st) => sameMix(state.mix, st.mix));
-const activePayout = () => (state.buckets.length === 1 ? PAYOUT_CHOICES.find((c) => c.key === bucketKey(state.buckets[0])) : null);
+const activePayout = () => (isSplit() ? PAYOUT_CHOICES.find((c) => c.key === 'split') : PAYOUT_CHOICES.find((c) => c.key === bucketKey(state.buckets[0])));
 
 function renderSimple() {
   $('styles').innerHTML = STYLES.map((st, i) => `<button class="choice" data-i="${i}" type="button"><span class="radio"></span><span class="t">${st.label} ${riskTag({ level: st.risk, note: '' })}</span><span class="d">${st.blurb}</span></button>`).join('');
@@ -298,6 +301,18 @@ function renderSimple() {
   };
   $('payout-choice').onclick = (e) => {
     const b = e.target.closest('.choice'); if (!b) return;
+    if (b.dataset.k === 'split') {
+      // bring back the visitor's own split, or start from the "Mix it up" preset
+      if (!isSplit()) {
+        const preset = PAYOUT_PRESETS.find((p) => p.buckets.length > 1) || PAYOUT_PRESETS[0];
+        state.buckets = (state.savedSplit?.length ? state.savedSplit : preset.buckets.map((x) => ({ key: bucketKey(x), pct: x.pct })))
+          .filter((x) => kindOf(bucketKey(x)) !== 'buy' || TARGETS.some((t) => t.ticker === targetOf(bucketKey(x))));
+      }
+      renderBucketEditor(); animateNext = true; render();
+      document.getElementById('router').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    if (isSplit()) state.savedSplit = state.buckets.map((x) => ({ key: bucketKey(x), pct: x.pct })); // keep it for later
     state.buckets = [{ key: b.dataset.k, pct: 100 }];
     renderBucketEditor(); animateNext = true; render();
   };
@@ -315,7 +330,7 @@ function summaryText(r) {
   const st = activeStyle(), pc = activePayout();
   const what = st ? `the <b>${st.label}</b> mix` : 'your mix';
   const every = { daily: 'a day', weekly: 'a week', monthly: 'a month' }[state.freq];
-  const paidHow = pc?.key === 'cash' ? 'paid you' : pc?.key === 'buy:BTC' ? 'paid out (turned into bitcoin)' : 'paid out (and reinvested)';
+  const paidHow = pc?.key === 'cash' ? 'paid you' : pc?.key === 'buy:BTC' ? 'paid out (turned into bitcoin)' : pc?.key === 'split' ? 'paid out (split the way you chose)' : 'paid out (and reinvested)';
   const gain = r.value - r.invested + (r.margin ? r.margin.start - r.margin.bal : 0); // value already includes any cash
   return `If you'd put <b>${usd0(state.amount)} ${every}</b> into ${what} since ${prettyDate(r.start)}, you'd have put in <b>${usd0(r.invested)}</b>. ` +
     `It would have ${paidHow} <span class="pos">${usd0(r.totalDiv)}</span> along the way, and everything${r.cash ? ', including that cash,' : ''} would be worth <b>${usd0(r.value)}</b> today` +
@@ -419,6 +434,7 @@ function draw() {
   chart?.destroy();
   $('chart').onmouseleave = null;
   if (view === 'income') {
+    document.querySelector('.chart-wrap .pulse-dot')?.remove(); // the line chart's live dot doesn't belong on bars
     const months = r.months;
     $('legend').innerHTML = r.B.map((b) => `<span><i class="sw" style="background:${bucketColor(b.key)}"></i>${bucketLabel(b.key)}</span>`).join('');
     chart = new Chart($('chart'), {
