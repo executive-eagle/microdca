@@ -42,6 +42,8 @@ const ICONS = {
   sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></svg>',
 };
+export const X_URL = 'https://x.com/MicroDCA3';
+export const X_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>';
 const MARK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#F7931A"/><path d="M6.5 16.5l3.6-4.2 2.7 2.2 4.7-6" stroke="#000" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 // [href, desktop label, icon, phone label]
 const PAGES = [
@@ -84,7 +86,8 @@ export function mountLayout(active, { modeSwitch = true } = {}) {
     <p><b>Strategy's preferred stock (STRC, STRF, STRK, STRD) is not collateralized by its bitcoin holdings, and dividends are not guaranteed.</b> STRD is non-cumulative: missed dividends are never owed. Strive's SATA preferred dividends are likewise not guaranteed and its variable rate can change.</p>
     <p><b>Covered-call ETFs like BTCI cap upside and can lose value (NAV) over time.</b> A high distribution rate is not the same as total return.</p>
     <p><b>The $10K portfolio is hypothetical. No real money is invested.</b> Simulations ignore taxes, fees and trading costs. Strategy has indicated recent dividends were characterized as return of capital for tax purposes; talk to a tax professional.</p>
-    <p id="data-meta"></p>`;
+    <p id="data-meta"></p>
+    <p class="social"><a href="${X_URL}" target="_blank" rel="noopener">${X_ICON}<span>Follow @MicroDCA3 on X</span></a></p>`;
   document.body.append(footer);
   initTerms();
 }

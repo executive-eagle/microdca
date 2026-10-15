@@ -442,3 +442,9 @@ main .layout > div > .rangebar { animation: fade 0.6s 0.35s ease both; }
 .tax-controls .ctl { width: 150px; }
 .tax-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-top: 12px; }
 .note-sm a { color: var(--brand); }
+
+/* social */
+.social a { display: inline-flex; align-items: center; gap: 8px; color: var(--fg); font-weight: 600; font-size: 13.5px; }
+.social a:hover { color: var(--brand); }
+.social svg { width: 16px; height: 16px; }
+.home-follow { margin-top: 18px; }
