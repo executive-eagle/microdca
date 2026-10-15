@@ -1,8 +1,8 @@
 import {
-  mountLayout, revealSections, drawInFor, loadData, priceLookup, liveBTC, eachDay, addDays, lineChart, rangeBar, setTrend, roller, downsample, sparkline, rgba,
+  mountLayout, revealSections, drawInFor, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, eachDay, addDays, lineChart, rangeBar, setTrend, roller, downsample, sparkline, rgba,
   usd, usd0, pct, num, btc, term, changeLine, signClass, prettyDate, todayISO, daysBetween, css, onTheme,
 } from './common.js';
-import { incomeAssets, colorOf, isPayDay, PORTFOLIO, BITCOIN } from './config.js';
+import { incomeAssets, colorOf, isPayDay, PORTFOLIO, BITCOIN, LIVE_QUOTES_URL } from './config.js';
 
 mountLayout('portfolio.html');
 
@@ -288,8 +288,15 @@ function rebuild() {
   draw(rowsForView());
   refresh(true);
   $('tl').innerHTML = horizon === 'NOW'
-    ? `Day <b>${Math.max(1, daysBetween(PORTFOLIO.priceDate, base.today))}</b> · stock prices update daily, bitcoin live`
+    ? `Day <b>${Math.max(1, daysBetween(PORTFOLIO.priceDate, base.today))}</b> · prices update every 15 seconds while the market is open`
     : 'Projection holds every price flat at today\'s level, so only reinvested dividends grow it. Press play to watch.';
+}
+
+function marketBadge(live) {
+  const el = $('badge');
+  const state = live?.open || 'closed';
+  el.textContent = { live: 'Live', pre: 'Pre-market', post: 'After hours', closed: live ? 'Market closed · BTC live' : 'BTC live' }[state];
+  el.classList.toggle('closed', state !== 'live');
 }
 
 /* ================= boot ================= */
@@ -320,9 +327,16 @@ function rebuild() {
       const perHr = (base.last.shares[t] * A[t].annual) / 365 / 24;
       hint(document.querySelector(`.li[data-t="${t}"]`), `+${usd(perHr, 3)}/hr`);
     }, 2000);
-    const pull = async () => { const p = await liveBTC(); if (p) { liveBtc = p; if (!playing) rebuild(); } };
+    // live prices: every 15s while the stock market is open (pre/after hours too), every minute otherwise
+    const pull = async () => {
+      const [p, live] = await Promise.all([liveBTC(), liveQuotes(LIVE_QUOTES_URL)]);
+      if (p) liveBtc = p;
+      applyQuotes(prices, live);
+      marketBadge(live);
+      if (!playing) rebuild();
+      setTimeout(pull, live && live.open !== 'closed' ? 15_000 : 60_000);
+    };
     pull();
-    setInterval(pull, 60_000);
   } catch (err) {
     $('change').textContent = 'Could not load price data. Please refresh the page.';
     console.error(err);

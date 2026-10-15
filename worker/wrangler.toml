@@ -1,0 +1,9 @@
+name = "microdca-quotes"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+# Where the worker learns which tickers it may serve (written by scripts/fetch-prices.mjs).
+TICKERS_URL = "https://executive-eagle.github.io/microdca/data/tickers.json"
+ALLOWED_ORIGINS = "https://executive-eagle.github.io,http://localhost:5179,http://localhost:5180"

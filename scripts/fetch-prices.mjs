@@ -38,6 +38,9 @@ async function fetchTicker({ yahoo, from }) {
 let previous = { series: {} };
 try { previous = JSON.parse(await readFile(OUT, 'utf8')); } catch {}
 
+// The live-quote worker reads this list, so any ticker added to assets.json gets live prices too.
+await writeFile(new URL('../public/data/tickers.json', import.meta.url), JSON.stringify(Object.fromEntries(Object.entries(TICKERS).map(([t, c]) => [t, c.yahoo]))));
+
 const series = {};
 let failures = 0;
 for (const [key, cfg] of Object.entries(TICKERS)) {

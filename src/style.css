@@ -213,6 +213,8 @@ input[type='range'] { width: 100%; accent-color: var(--brand); height: 18px; }
 .live { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--up); }
 .live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: blink 1.6s infinite; }
 @keyframes blink { 50% { opacity: 0.25; } }
+.live.closed { color: var(--muted); }
+.live.closed::before { animation: none; background: var(--brand); }
 
 .earn { border: 1px solid var(--line); border-radius: 6px; padding: 20px 24px; }
 .earn .k { font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; }

@@ -174,6 +174,31 @@ export async function liveBTC() {
   return null;
 }
 
+/**
+ * Real-time stock/ETF quotes from the MicroDCA worker (Yahoo data, cached 15s at the edge).
+ * Returns { quotes: { TICKER: { price, date, state, time } }, open } or null if unavailable.
+ */
+let quoteCache = { t: 0, v: null };
+export async function liveQuotes(url) {
+  if (!url) return null;
+  if (Date.now() - quoteCache.t < 10_000 && quoteCache.v) return quoteCache.v;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const { quotes } = await r.json();
+    const states = Object.values(quotes).map((q) => q.state);
+    const v = { quotes, open: states.includes('live') ? 'live' : states.includes('pre') ? 'pre' : states.includes('post') ? 'post' : 'closed' };
+    quoteCache = { t: Date.now(), v };
+    return v;
+  } catch { return null; }
+}
+
+/** Puts each live quote into its price series as today's (forward-filled) close. */
+export function applyQuotes(prices, live) {
+  if (!live) return;
+  for (const [t, q] of Object.entries(live.quotes)) if (prices[t] && q.price > 0) prices[t].set(q.date, q.price);
+}
+
 /* ---------- rolling digits ---------- */
 export function roller(el) {
   el.classList.add('roll');

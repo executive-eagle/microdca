@@ -1,8 +1,8 @@
 import {
-  mountLayout, revealSections, drawInFor, reduceMotion, loadData, priceLookup, liveBTC, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller, Chart,
+  mountLayout, revealSections, drawInFor, reduceMotion, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller, Chart,
   usd, usd0, pct, btc, num, stat, term, changeLine, signClass, prettyDate, parseISO, addDays, daysBetween, todayISO, sparkline, css, onTheme, FREQ_WORD,
 } from './common.js';
-import { incomeAssets, buyTargets, colorOf, nameOf, PRESETS, PAYOUT_PRESETS, BITCOIN } from './config.js';
+import { incomeAssets, buyTargets, colorOf, nameOf, PRESETS, PAYOUT_PRESETS, BITCOIN, LIVE_QUOTES_URL } from './config.js';
 
 mountLayout('income.html');
 
@@ -435,12 +435,16 @@ function bindRouter() {
     TARGETS = buyTargets(data);
     for (const t of new Set([...TICKERS, ...TARGETS.map((x) => x.ticker), 'BTC'])) prices[t] = priceLookup(data.series[t].prices);
     for (const t of TICKERS) { events[t] = new Map(data.series[t].dividends); rates[t] = dailyRate(t); }
+    // grab live prices first (max 1.5s) so today's numbers are current and the intro animation only plays once
+    const [btcNow, quotes] = await Promise.race([
+      Promise.all([liveBTC(), liveQuotes(LIVE_QUOTES_URL)]),
+      new Promise((r) => setTimeout(() => r([null, null]), 1500)),
+    ]);
+    if (btcNow) prices.BTC.set(todayISO(), btcNow);
+    applyQuotes(prices, quotes);
     state.end = TICKERS.map((t) => prices[t].last).sort()[0];
     state.start = TICKERS.map((t) => prices[t].first).sort().at(-1);
     restore();
-    // grab the live BTC price first (max 1.2s) so the intro animation only plays once
-    const live = await Promise.race([liveBTC(), new Promise((r) => setTimeout(() => r(null), 1200))]);
-    if (live) prices.BTC.set(todayISO(), live);
     if (!TARGETS.some((t) => t.ticker === state.compare)) state.compare = TARGETS[0].ticker;
 
     $('presets').innerHTML = PRESETS.map((p, i) => `<button data-i="${i}">${p.label}</button>`).join('');

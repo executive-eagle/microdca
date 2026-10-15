@@ -7,6 +7,7 @@ const ttm = (divs, asOf) => {
 };
 
 export const BITCOIN = raw.bitcoin;
+export const LIVE_QUOTES_URL = raw.live_quotes_url || null;
 export const PORTFOLIO = {
   startValue: raw.portfolio.start_value,
   inception: raw.portfolio.inception,

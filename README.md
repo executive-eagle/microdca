@@ -23,6 +23,16 @@ Prices and dividend history for every listed ticker are downloaded automatically
 
 A GitHub Action (`.github/workflows/deploy.yml`) runs twice a day: it pulls daily closes and dividend history from Yahoo Finance's public chart endpoint (no API key), commits `public/data/prices.json`, rebuilds and redeploys to GitHub Pages. If a fetch fails, the previous data is kept. The bitcoin price also updates live in the browser from Coinbase's free public API (CoinGecko as backup).
 
+## Live prices
+
+Stock and ETF prices update every 15 seconds while the market is open through a free Cloudflare Worker (`worker/`), which fetches real-time Yahoo Finance quotes and caches them at the edge. It serves every ticker listed in `public/data/tickers.json` (generated from `assets.json`), so new tickers get live prices automatically after the next deploy. Bitcoin is priced live in the browser.
+
+The worker runs on Cloudflare's Workers Free plan: if it ever exceeds 100,000 requests in a day, live prices pause until the next day and nothing is billed. To redeploy it after changing its code:
+
+```bash
+cd worker && npx wrangler deploy
+```
+
 ## Run locally
 
 ```bash
