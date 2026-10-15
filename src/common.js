@@ -130,7 +130,7 @@ export function loadData() {
     .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then((data) => {
       const el = document.getElementById('data-meta');
-      if (el) el.textContent = `Market data: daily closes via Yahoo Finance, updated ${new Date(data.updated).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}. Live bitcoin price via CoinGecko.`;
+      if (el) el.textContent = `Market data: daily closes via Yahoo Finance, updated ${new Date(data.updated).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}. Live bitcoin price via Coinbase (CoinGecko backup).`;
       return data;
     });
   return dataPromise;
@@ -155,11 +155,23 @@ export function priceLookup(pairs) {
   return fn;
 }
 
+/** Live BTC/USD: Coinbase first, CoinGecko as backup (both free, no key). Cached 30s; null if both fail. */
+let btcCache = { t: 0, v: null };
 export async function liveBTC() {
-  try {
-    const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
-    return r.ok ? (await r.json()).bitcoin.usd : null;
-  } catch { return null; }
+  if (Date.now() - btcCache.t < 30_000 && btcCache.v) return btcCache.v;
+  const sources = [
+    ['https://api.coinbase.com/v2/prices/BTC-USD/spot', (j) => +j.data.amount],
+    ['https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', (j) => j.bitcoin.usd],
+  ];
+  for (const [url, pick] of sources) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) continue;
+      const v = pick(await r.json());
+      if (v > 0) { btcCache = { t: Date.now(), v }; return v; }
+    } catch {}
+  }
+  return null;
 }
 
 /* ---------- rolling digits ---------- */
@@ -225,7 +237,49 @@ const crosshair = {
 };
 
 /** Line chart with no axes/grid; dragging across it scrubs the headline number. */
-export function lineChart(canvas, { labels, datasets, onScrub, dateLabel, yRange }) {
+export const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const easeOut = (k) => 1 - Math.pow(1 - k, 3);
+
+/** Clips the datasets to a growing width so the line "draws itself" left to right. */
+const reveal = {
+  id: 'reveal',
+  beforeDatasetsDraw(chart) {
+    const p = chart.$reveal ?? 1;
+    if (p >= 1) return;
+    const { left, right } = chart.chartArea;
+    chart.ctx.save();
+    chart.ctx.beginPath();
+    chart.ctx.rect(0, 0, left + (right - left) * p, chart.height);
+    chart.ctx.clip();
+    chart.$clipped = true;
+  },
+  afterDatasetsDraw(chart) { if (chart.$clipped) { chart.ctx.restore(); chart.$clipped = false; } },
+};
+
+/** Pulsing "live" dot on the last point of one dataset (a DOM element so CSS can animate it). */
+const liveDot = {
+  id: 'liveDot',
+  afterDraw(chart) {
+    const wrap = chart.canvas.parentElement;
+    let dot = wrap.querySelector('.pulse-dot');
+    const i = chart.$pulse;
+    if (i == null || (chart.$reveal ?? 1) < 1) { if (dot) dot.hidden = true; return; }
+    const meta = chart.getDatasetMeta(i);
+    const data = chart.data.datasets[i].data;
+    let last = data.length - 1;
+    while (last >= 0 && data[last] == null) last--;
+    const pt = meta.data[last];
+    if (!pt) { if (dot) dot.hidden = true; return; }
+    if (!dot) { dot = document.createElement('span'); dot.className = 'pulse-dot'; wrap.append(dot); }
+    dot.hidden = false;
+    dot.style.left = pt.x + 'px';
+    dot.style.top = pt.y + 'px';
+    dot.style.setProperty('--c', chart.data.datasets[i].borderColor);
+  },
+};
+
+/** Line chart with no axes/grid; dragging across it scrubs the headline number. */
+export function lineChart(canvas, { labels, datasets, onScrub, dateLabel, yRange, drawIn = false, pulse = null }) {
   const chart = new Chart(canvas, {
     type: 'line',
     data: {
@@ -246,14 +300,66 @@ export function lineChart(canvas, { labels, datasets, onScrub, dateLabel, yRange
       scales: { x: { display: false }, y: { display: false, ...(yRange || {}) } },
       onHover: (_e, els) => onScrub?.(els.length ? els[0].index : null),
     },
-    plugins: [crosshair],
+    plugins: [reveal, crosshair, liveDot],
   });
   chart.$dateLabel = dateLabel;
-  const reset = () => { chart.setActiveElements([]); chart.update('none'); onScrub?.(null); };
-  canvas.addEventListener('mouseleave', reset);
-  canvas.addEventListener('touchend', reset);
+  chart.$pulse = pulse;
+  // drawIn: true starts the draw-in; a number (0–1) continues one a previous chart had in progress
+  if (drawIn !== false && drawIn != null && !reduceMotion) {
+    const from = drawIn === true ? 0 : +drawIn;
+    chart.$reveal = from;
+    const t0 = performance.now(), ms = 900 * (1 - from);
+    const step = (t) => {
+      if (!chart.canvas) return; // destroyed
+      chart.$reveal = from + (1 - from) * easeOut(Math.min(1, (t - t0) / ms));
+      chart.draw();
+      if (chart.$reveal < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  const reset = () => { if (!chart.canvas) return; chart.setActiveElements([]); chart.update('none'); onScrub?.(null); };
+  canvas.onmouseleave = reset;
+  canvas.ontouchend = reset;
   return chart;
 }
+
+/* ---------- scroll reveal + count-up ---------- */
+function countUp(el) {
+  const m = el.textContent.match(/^(.*?)(-?)([\d,]+(?:\.\d+)?)(.*)$/);
+  if (!m) return;
+  const [, pre, neg, numStr, post] = m;
+  const target = parseFloat(numStr.replace(/,/g, ''));
+  const dp = (numStr.split('.')[1] || '').length;
+  const t0 = performance.now(), ms = 900;
+  const step = (t) => {
+    if (!el.isConnected) return;
+    const k = easeOut(Math.min(1, (t - t0) / ms));
+    el.textContent = pre + neg + (target * k).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp }) + post;
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/** Sections fade/rise in as they scroll into view; their stats count up and rows stagger in. */
+export function revealSections() {
+  const blocks = document.querySelectorAll('main section.block, main .panel, main .earn');
+  if (reduceMotion || !('IntersectionObserver' in window)) return;
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      const b = e.target;
+      io.unobserve(b);
+      b.querySelectorAll('.stat, .li, .bucket, .vs-row').forEach((el, i) => el.style.setProperty('--i', Math.min(i, 12)));
+      b.classList.add('in');
+      b.querySelectorAll('.stats .stat .v').forEach(countUp);
+      setTimeout(() => b.classList.add('settled'), 1400);
+    }
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+  blocks.forEach((b) => { b.classList.add('reveal'); io.observe(b); });
+}
+
+/** What to pass as `drawIn` when replacing `old`: animate if asked, else continue an unfinished draw-in. */
+export const drawInFor = (old, animate) => (animate ? true : old && old.canvas && (old.$reveal ?? 1) < 1 ? old.$reveal : false);
 
 /** Range bar under the chart (text buttons with an underline on the active one). */
 export function rangeBar(el, items, active, onChange) {

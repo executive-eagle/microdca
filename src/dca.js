@@ -1,5 +1,5 @@
 import {
-  mountLayout, loadData, priceLookup, liveBTC, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller,
+  mountLayout, revealSections, drawInFor, loadData, priceLookup, liveBTC, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller,
   usd, usd0, pct, btc, stat, term, changeLine, signClass, prettyDate, addDays, todayISO, css, onTheme, FREQ_WORD,
 } from './common.js';
 
@@ -8,7 +8,7 @@ mountLayout('index.html');
 const $ = (id) => document.getElementById(id);
 const big = roller($('big'));
 const state = { amount: 100, freq: 'weekly', start: null, end: null };
-let price, chart, lump = false, result, range = '5Y';
+let price, chart, lump = false, result, range = '5Y', animateNext = true;
 
 const RANGES = [['1Y', '1Y'], ['2Y', '2Y'], ['5Y', '5Y'], ['10Y', '10Y'], ['MAX', 'Max']];
 const startFor = (r) => (r === 'MAX' ? price.first : addDays(state.end, -Math.round(365.25 * parseInt(r))));
@@ -73,9 +73,12 @@ function draw() {
   ];
   if (lump) ds.push({ label: 'Lump sum', data: rows.map((x) => x.lump), color: css('--fg-2'), width: 1.5, order: 1 });
   $('legend').innerHTML = `<span><i class="sw" style="background:${ds[0].color}"></i>Your DCA</span><span><i class="sw dash"></i>Money put in</span>${lump ? `<span><i class="sw" style="background:${css('--fg-2')}"></i>Lump sum</span>` : ''}`;
+  const drawIn = drawInFor(chart, animateNext); animateNext = false;
   chart?.destroy();
   chart = lineChart($('chart'), {
     labels: rows.map((x) => x.d), datasets: ds,
+    drawIn,
+    pulse: state.end === price.last ? 0 : null,
     dateLabel: (i) => prettyDate(rows[i].d),
     onScrub: (i) => {
       if (i == null) { big(usd(r.value)); changeLine($('change'), r.value - r.invested, r.invested, `vs. ${usd0(r.invested)} put in`); return; }
@@ -98,14 +101,15 @@ function sync() {
     state.start = startFor(range);
     const clamp = (v) => (v < price.first ? price.first : v > price.last ? price.last : v);
     const clearRange = () => $('range').querySelectorAll('[data-r]').forEach((b) => b.classList.remove('active'));
-    rangeBar($('range'), RANGES, range, (r) => { range = r; state.start = startFor(r); sync(); render(); });
-    $('lump-toggle').onclick = () => { lump = !lump; $('lump-toggle').textContent = lump ? 'Hide lump sum' : 'Compare lump sum'; draw(); };
+    rangeBar($('range'), RANGES, range, (r) => { range = r; animateNext = true; state.start = startFor(r); sync(); render(); });
+    $('lump-toggle').onclick = () => { lump = !lump; animateNext = true; $('lump-toggle').textContent = lump ? 'Hide lump sum' : 'Compare lump sum'; draw(); };
     $('amount').oninput = (e) => { state.amount = +e.target.value; render(); };
     $('freq').onchange = (e) => { state.freq = e.target.value; render(); };
     $('start').onchange = (e) => { if (e.target.value) { state.start = clamp(e.target.value); clearRange(); sync(); render(); } };
     $('end').onchange = (e) => { if (e.target.value) { state.end = clamp(e.target.value); sync(); render(); } };
     for (const id of ['start', 'end']) { $(id).min = price.first; $(id).max = price.last; }
     sync(); render();
+    revealSections();
 
     const live = await liveBTC();
     if (live) {

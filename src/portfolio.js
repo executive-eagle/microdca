@@ -1,5 +1,5 @@
 import {
-  mountLayout, loadData, priceLookup, liveBTC, eachDay, addDays, lineChart, rangeBar, setTrend, roller, downsample, sparkline, rgba,
+  mountLayout, revealSections, drawInFor, loadData, priceLookup, liveBTC, eachDay, addDays, lineChart, rangeBar, setTrend, roller, downsample, sparkline, rgba,
   usd, usd0, pct, num, btc, term, changeLine, signClass, prettyDate, todayISO, daysBetween, css, onTheme,
 } from './common.js';
 import { incomeAssets, colorOf, isPayDay, PORTFOLIO, BITCOIN } from './config.js';
@@ -13,7 +13,7 @@ const ASSETS = Object.keys(PORTFOLIO.allocation);
 const START = PORTFOLIO.startValue;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-let A = {}, INCOME = [], prices = {}, sched = 'daily', horizon = 'NOW', chart, base, playing = null, liveBtc = null;
+let A = {}, INCOME = [], prices = {}, sched = 'daily', horizon = 'NOW', chart, base, playing = null, liveBtc = null, animateNext = true;
 
 /* ================= engine ================= */
 const priceOn = (t, d) => (t === BITCOIN.ticker && liveBtc && d >= todayISO() ? liveBtc : prices[t](d));
@@ -128,9 +128,13 @@ function holdings(row, px, prev) {
   const tmp = document.createElement('div');
   tmp.innerHTML = holdingsHTML(row, px);
   if (el.children.length !== tmp.children.length) { el.innerHTML = tmp.innerHTML; return; }
+  const money = (t) => parseFloat(t.replace(/[^0-9.-]/g, ''));
   [...tmp.children].forEach((n, i) => {
     const cur = el.children[i];
+    const before = money(cur.querySelector('.chip-val').textContent);
     for (const sel of ['.sub', '.note', '.chip-val']) cur.querySelector(sel).outerHTML = n.querySelector(sel).outerHTML;
+    const after = money(cur.querySelector('.chip-val').textContent);
+    if (!prev && !playing && !reduceMotion && Math.abs(after - before) >= 0.01) cur.querySelector('.chip-val').classList.add(after > before ? 'flash-up' : 'flash-down');
     cur.querySelector('svg.spark').outerHTML = n.querySelector('svg.spark').outerHTML;
     const [a, b] = cur.querySelectorAll('.bar i'), [na, nb] = n.querySelectorAll('.bar i');
     a.style.width = na.style.width; b.style.width = nb.style.width;
@@ -139,9 +143,32 @@ function holdings(row, px, prev) {
   });
 }
 
+/** Soft "+$0.0123/min" hint next to an income holding's name. */
+function hint(rowEl, text) {
+  if (reduceMotion || !rowEl) return;
+  const plus = rowEl.querySelector('.plus');
+  plus.textContent = text;
+  plus.classList.add('show', 'hint');
+  clearTimeout(plus._t);
+  plus._t = setTimeout(() => plus.classList.remove('show'), 1300);
+}
+
+/** A small amount floats up off the dividend counter. */
+function drop(amount) {
+  if (reduceMotion || document.hidden) return;
+  const card = document.querySelector('.earn');
+  const d = document.createElement('span');
+  d.className = 'drop';
+  d.textContent = '+' + usd(amount, 6);
+  card.append(d);
+  d.addEventListener('animationend', () => d.remove());
+  card.classList.remove('bump'); void card.offsetWidth; card.classList.add('bump');
+}
+
 function pulse(rowEl, text) {
   if (reduceMotion) return;
   const plus = rowEl.querySelector('.plus');
+  plus.classList.remove('hint');
   plus.textContent = text;
   plus.classList.add('show');
   rowEl.classList.remove('tick'); void rowEl.offsetWidth; rowEl.classList.add('tick');
@@ -160,17 +187,22 @@ function draw(rows, upto = rows.length - 1) {
   const pad = span * 0.1 + (span - (hi - lo)) / 2;
   const value = pts.map((r, i) => (show(i) ? r.value : null));
   const divLine = pts.map((r, i) => (show(i) ? START + r.earned : null));
+  const up = pts.at(-1).value >= START;
   if (chart && chart.$key === horizon + sched + pts.length) {
     chart.data.datasets[1].data = divLine;
     chart.data.datasets[2].data = value;
+    chart.data.datasets[2].borderColor = up ? css('--up') : css('--down');
     chart.update('none');
     return;
   }
+  const drawIn = playing ? false : drawInFor(chart, animateNext);
+  animateNext = false;
   chart?.destroy();
-  const up = pts.at(-1).value >= START;
   chart = lineChart($('chart'), {
     labels: pts.map((r) => r.d),
     yRange: { min: lo - pad, max: hi + pad },
+    drawIn,
+    pulse: horizon === 'NOW' ? 2 : null,
     dateLabel: (i) => prettyDate(pts[i].d),
     datasets: [
       { label: 'Your $10K', data: pts.map(() => START), color: css('--muted'), dashed: true, order: 3 },
@@ -238,7 +270,7 @@ function refresh(force) {
 function tickEarn() {
   if (!playing && base) {
     const v = live();
-    earnRoll(usd(v.earned, 4));
+    earnRoll(usd(v.earned, 6));
     const frac = secIntoDay() / 86400;
     $('drip').style.width = (sched === 'daily' ? frac * 100 : 100 * Math.min(1, v.partial / Math.max(base.rate * 86400, 1e-9))) + '%';
     const left = 86400 - secIntoDay(), h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60);
@@ -253,7 +285,6 @@ function rebuild() {
   $('rate').innerHTML = `${usd(base.rate * 86400)}/day · ${usd(base.rate * 3600, 4)}/hr · ${usd(base.rate * 86400 * 365)}/yr`;
   $('earn-since').textContent = 'since Oct 15';
   holdings(base.last, base.px);
-  chart?.destroy(); chart = null;
   draw(rowsForView());
   refresh(true);
   $('tl').innerHTML = horizon === 'NOW'
@@ -272,13 +303,23 @@ function rebuild() {
     $('sched-lbl').innerHTML = term('Payouts', 'Daily (proposed): Strategy shareholders vote Oct 28, 2026 on paying every calendar day (STRC from Nov 2, 2026; STRF, STRK, STRD from Jan 4, 2027). Every holding here reinvests daily. Actual schedule: money still accrues daily, but is only reinvested on real pay dates (STRC twice a month, STRF/STRK/STRD quarterly, BTCI monthly).');
     $('earn-lbl').innerHTML = term('Dividends earned', 'Each income holding earns its yearly dividend ÷ 365 per share every day. This counter adds it up second by second.');
     $('split-h').innerHTML = `Where your ${term('money', 'Your money = the $10K you started with. Dividends = income paid to you and reinvested. Market move = how much prices have gone up or down.')} came from`;
-    rangeBar($('range'), [['NOW', 'Live'], ['1Y', '1Y'], ['5Y', '5Y'], ['10Y', '10Y']], 'NOW', (h) => { horizon = h; stop(); if (h !== 'NOW') play(); });
+    rangeBar($('range'), [['NOW', 'Live'], ['1Y', '1Y'], ['5Y', '5Y'], ['10Y', '10Y']], 'NOW', (h) => { horizon = h; animateNext = h === 'NOW'; stop(); if (h !== 'NOW') play(); });
     $('play').onclick = () => (playing ? stop() : play());
-    $('sched').onchange = (e) => { sched = e.target.value; stop(); };
+    $('sched').onchange = (e) => { sched = e.target.value; animateNext = true; stop(); };
     rebuild();
+    revealSections();
     setInterval(() => refresh(false), 1000);
     setInterval(tickEarn, 500);
     tickEarn();
+    // every 2s: dividends drip off the counter; holdings take turns showing what they earn per minute
+    let turn = 0;
+    setInterval(() => {
+      if (playing || horizon !== 'NOW' || !base) return;
+      drop(base.rate * 2);
+      const t = INCOME[turn++ % INCOME.length];
+      const perHr = (base.last.shares[t] * A[t].annual) / 365 / 24;
+      hint(document.querySelector(`.li[data-t="${t}"]`), `+${usd(perHr, 3)}/hr`);
+    }, 2000);
     const pull = async () => { const p = await liveBTC(); if (p) { liveBtc = p; if (!playing) rebuild(); } };
     pull();
     setInterval(pull, 60_000);

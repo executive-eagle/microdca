@@ -1,5 +1,5 @@
 import {
-  mountLayout, loadData, priceLookup, liveBTC, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller, Chart,
+  mountLayout, revealSections, drawInFor, reduceMotion, loadData, priceLookup, liveBTC, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller, Chart,
   usd, usd0, pct, btc, num, stat, term, changeLine, signClass, prettyDate, parseISO, addDays, daysBetween, todayISO, sparkline, css, onTheme, FREQ_WORD,
 } from './common.js';
 import { incomeAssets, buyTargets, colorOf, nameOf, PRESETS, PAYOUT_PRESETS, BITCOIN } from './config.js';
@@ -12,7 +12,7 @@ const SAVE_KEY = 'microdca-income-v1';
 const BUCKET_COLORS = { same: '#F7931A', margin: '#7C8CF8', bills: '#F2716B', cash: '#4FB0C6' };
 const WINDOWS = [['1M', '1M', 30], ['3M', '3M', 91], ['6M', '6M', 182], ['1Y', '1Y', 365], ['ALL', 'All', 1e5]];
 
-let A, TICKERS, TARGETS, data, prices = {}, events = {}, rates = {}, chart, view = 'income', win = 'ALL', result;
+let A, TICKERS, TARGETS, data, prices = {}, events = {}, rates = {}, chart, view = 'income', win = 'ALL', result, animateNext = true;
 const state = {
   amount: 500, freq: 'monthly', start: null, end: null, mix: {}, sched: 'actual',
   buckets: [{ key: 'same', pct: 100 }], route: 'paid', compare: 'BTC', margin: { balance: 5000, apr: 8.5 },
@@ -312,6 +312,9 @@ const fmtMonth = (m) => parseISO(m + '-01').toLocaleDateString('en-US', { month:
 
 function draw() {
   const r = result;
+  const animate = animateNext && !reduceMotion;
+  const drawIn = drawInFor(chart, animateNext);
+  animateNext = false;
   chart?.destroy();
   $('chart').onmouseleave = null;
   if (view === 'income') {
@@ -324,7 +327,9 @@ function draw() {
         datasets: r.B.map((b, i) => ({ data: months.map(([, v]) => v[i]), backgroundColor: bucketColor(b.key), borderRadius: 2, maxBarThickness: 28, categoryPercentage: 0.75, stack: 's' })),
       },
       options: {
-        responsive: true, maintainAspectRatio: false, animation: { duration: 500 },
+        responsive: true, maintainAspectRatio: false,
+        // bars grow up one after another the first time, then update instantly while you tweak inputs
+        animation: animate ? { duration: 650, easing: 'easeOutQuart', delay: (c) => (c.type === 'data' && c.mode === 'default' ? c.dataIndex * 28 + c.datasetIndex * 40 : 0) } : false,
         interaction: { mode: 'index', intersect: false },
         plugins: { legend: { display: false }, tooltip: { enabled: false } },
         scales: {
@@ -352,6 +357,7 @@ function draw() {
     if (showNet) ds.push({ label: 'Net', data: rows.map((x) => x.net), color: BUCKET_COLORS.margin, width: 1.5, order: 1 });
     chart = lineChart($('chart'), {
       labels: rows.map((x) => x.d), datasets: ds,
+      drawIn, pulse: 0,
       dateLabel: (i) => prettyDate(rows[i].d),
       onScrub: (i) => {
         if (i == null) return headline();
@@ -383,7 +389,7 @@ function applyRoutePreset(i) {
 
 function bindRouter() {
   $('route-presets').innerHTML = PAYOUT_PRESETS.map((p, i) => `<button data-i="${i}">${p.label}</button>`).join('');
-  $('route-presets').onclick = (e) => { const b = e.target.closest('button'); if (b) { applyRoutePreset(+b.dataset.i); render(); } };
+  $('route-presets').onclick = (e) => { const b = e.target.closest('button'); if (b) { applyRoutePreset(+b.dataset.i); animateNext = true; render(); } };
   $('buckets').addEventListener('change', (e) => {
     const row = e.target.closest('.bucket'); if (!row) return;
     const b = state.buckets[+row.dataset.i];
@@ -432,10 +438,13 @@ function bindRouter() {
     state.end = TICKERS.map((t) => prices[t].last).sort()[0];
     state.start = TICKERS.map((t) => prices[t].first).sort().at(-1);
     restore();
+    // grab the live BTC price first (max 1.2s) so the intro animation only plays once
+    const live = await Promise.race([liveBTC(), new Promise((r) => setTimeout(() => r(null), 1200))]);
+    if (live) prices.BTC.set(todayISO(), live);
     if (!TARGETS.some((t) => t.ticker === state.compare)) state.compare = TARGETS[0].ticker;
 
     $('presets').innerHTML = PRESETS.map((p, i) => `<button data-i="${i}">${p.label}</button>`).join('');
-    $('presets').onclick = (e) => { const b = e.target.closest('button'); if (b) { applyPreset(+b.dataset.i); render(); } };
+    $('presets').onclick = (e) => { const b = e.target.closest('button'); if (b) { applyPreset(+b.dataset.i); animateNext = true; render(); } };
     applyPreset(0);
     $('mix').oninput = (e) => {
       const t = e.target.dataset.t; if (!t) return;
@@ -453,12 +462,12 @@ function bindRouter() {
     $('end').onchange = (e) => { if (e.target.value) { state.end = clamp(e.target.value); e.target.value = state.end; render(); } };
     for (const id of ['freq', 'sched']) $(id).onchange = (e) => { state[id] = e.target.value; render(); };
     $('sched-lbl').innerHTML = term('Schedule', 'Actual: paid on the real historical dates (STRC twice a month, STRF/STRK/STRD quarterly, BTCI monthly). Daily (proposed): Strategy shareholders vote Oct 28, 2026 on paying every calendar day. This spreads each preferred\'s payouts across every day. Funds without a proposal keep their normal schedule.');
-    rangeBar($('view'), [['income', 'Payouts'], ['value', 'Value']], view, (v) => { view = v; draw(); });
+    rangeBar($('view'), [['income', 'Payouts'], ['value', 'Value']], view, (v) => { view = v; animateNext = true; draw(); });
     bindRouter();
     render();
+    revealSections();
 
-    const live = await liveBTC();
-    if (live) { prices.BTC.set(todayISO(), live); render(); }
+
   } catch (err) {
     $('sentence').textContent = 'Could not load price data. Please refresh the page.';
     console.error(err);

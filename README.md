@@ -21,7 +21,7 @@ Prices and dividend history for every listed ticker are downloaded automatically
 
 ## How data updates
 
-A GitHub Action (`.github/workflows/deploy.yml`) runs twice a day: it pulls daily closes and dividend history from Yahoo Finance's public chart endpoint (no API key), commits `public/data/prices.json`, rebuilds and redeploys to GitHub Pages. If a fetch fails, the previous data is kept. The bitcoin price also updates live in the browser from CoinGecko's free API.
+A GitHub Action (`.github/workflows/deploy.yml`) runs twice a day: it pulls daily closes and dividend history from Yahoo Finance's public chart endpoint (no API key), commits `public/data/prices.json`, rebuilds and redeploys to GitHub Pages. If a fetch fails, the previous data is kept. The bitcoin price also updates live in the browser from Coinbase's free public API (CoinGecko as backup).
 
 ## Run locally
 
