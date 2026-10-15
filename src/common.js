@@ -18,43 +18,69 @@ document.documentElement.dataset.theme = readTheme() || 'dark';
 export const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 export const onTheme = (fn) => document.addEventListener('themechange', fn);
 
+/* ---------- Simple / Advanced mode (site-wide, remembered per browser) ---------- */
+const MODE_KEY = 'microdca-mode';
+const readMode = () => { try { return localStorage.getItem(MODE_KEY); } catch { return null; } };
+export const getMode = () => document.documentElement.dataset.mode;
+export const isSimple = () => getMode() !== 'advanced';
+function setMode(m) {
+  document.documentElement.dataset.mode = m;
+  try { localStorage.setItem(MODE_KEY, m); } catch {}
+  document.querySelectorAll('.mode-switch button').forEach((b) => b.classList.toggle('active', b.dataset.m === m));
+  document.dispatchEvent(new CustomEvent('modechange', { detail: m }));
+}
+document.documentElement.dataset.mode = readMode() || 'simple';
+export const onMode = (fn) => document.addEventListener('modechange', (e) => fn(e.detail));
+
 /* ---------- layout ---------- */
 const ICONS = {
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>',
   dca: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/></svg>',
   income: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>',
   live: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.5 6"/></svg>',
+  learn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5c-.8 0-1.5-.7-1.5-1.5z"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5z"/></svg>',
   sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></svg>',
 };
 const MARK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#F7931A"/><path d="M6.5 16.5l3.6-4.2 2.7 2.2 4.7-6" stroke="#000" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+// [href, desktop label, icon, phone label]
 const PAGES = [
-  ['index.html', 'Bitcoin DCA', 'dca'],
-  ['income.html', 'Income', 'income'],
-  ['portfolio.html', 'Live $10K', 'live'],
+  ['index.html', 'Home', 'home', 'Home'],
+  ['bitcoin.html', 'Bitcoin', 'dca', 'Bitcoin'],
+  ['income.html', 'Income', 'income', 'Income'],
+  ['portfolio.html', 'Live $10K', 'live', '$10K'],
+  ['learn.html', 'Learn', 'learn', 'Learn'],
 ];
 
-export function mountLayout(active) {
+export function mountLayout(active, { modeSwitch = true } = {}) {
   const header = document.createElement('header');
   header.className = 'site-header';
   header.innerHTML = `<div class="in">
     <a class="wordmark" href="index.html" aria-label="MicroDCA home">${MARK}MicroDCA</a>
-    <nav>${PAGES.map(([h, l]) => `<a href="${h}" class="${h === active ? 'active' : ''}">${l}</a>`).join('')}</nav>
+    <nav>${PAGES.slice(1).map(([h, l]) => `<a href="${h}" class="${h === active ? 'active' : ''}">${l}</a>`).join('')}</nav>
+    ${modeSwitch ? `<div class="mode-switch" role="group" aria-label="Simple or advanced view">
+      <button data-m="simple" title="Just the essentials, in plain English">Simple</button><button data-m="advanced" title="Every setting and number">Advanced</button>
+    </div>` : ''}
     <button class="icon-btn" id="theme-btn" aria-label="Switch light or dark mode"></button></div>`;
   document.body.prepend(header);
   const btn = header.querySelector('#theme-btn');
   const sync = () => { btn.innerHTML = document.documentElement.dataset.theme === 'dark' ? ICONS.sun : ICONS.moon; };
   sync();
   btn.onclick = () => { setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'); sync(); };
+  header.querySelectorAll('.mode-switch button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.m === getMode());
+    b.onclick = () => setMode(b.dataset.m);
+  });
 
   const tabbar = document.createElement('nav');
   tabbar.className = 'tabbar';
-  tabbar.innerHTML = PAGES.map(([h, l, i]) => `<a href="${h}" class="${h === active ? 'active' : ''}">${ICONS[i]}${l}</a>`).join('');
+  tabbar.innerHTML = PAGES.map(([h, , i, short]) => `<a href="${h}" class="${h === active ? 'active' : ''}">${ICONS[i]}${short}</a>`).join('');
   document.body.append(tabbar);
 
   const footer = document.createElement('footer');
   footer.className = 'legal';
   footer.innerHTML = `
-    <p><b>Educational simulation, not financial advice.</b> Past performance does not predict future results. Nothing on MicroDCA is a recommendation to buy or sell anything.</p>
+    <p><b>Educational simulation, not financial advice.</b> Past performance does not predict future results. Nothing on MicroDCA is a recommendation to buy or sell anything. <a href="learn.html">New to this? Start here.</a></p>
     <p><b>Strategy's preferred stock (STRC, STRF, STRK, STRD) is not collateralized by its bitcoin holdings, and dividends are not guaranteed.</b> STRD is non-cumulative: missed dividends are never owed. Strive's SATA preferred dividends are likewise not guaranteed and its variable rate can change.</p>
     <p><b>Covered-call ETFs like BTCI cap upside and can lose value (NAV) over time.</b> A high distribution rate is not the same as total return.</p>
     <p><b>The $10K portfolio is hypothetical. No real money is invested.</b> Simulations ignore taxes, fees and trading costs. Strategy has indicated recent dividends were characterized as return of capital for tax purposes; talk to a tax professional.</p>
@@ -63,28 +89,64 @@ export function mountLayout(active) {
   initTerms();
 }
 
-/* ---------- dotted-underline terms ---------- */
-export const term = (label, text) => `<span class="term" tabindex="0" data-tip="${text.replace(/"/g, '&quot;')}">${label}</span>`;
+/* ---------- dotted-underline terms (with an optional "Learn more" link) ---------- */
+const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+export const term = (label, text, learn = '') =>
+  `<span class="term" tabindex="0" data-tip="${esc(text)}"${learn ? ` data-learn="${learn}"` : ''}>${label}</span>`;
 function initTerms() {
-  let pop;
-  const close = () => { pop?.remove(); pop = null; };
-  const open = (el) => {
+  let pop, pinned = false, hideTimer;
+  const close = () => { pop?.remove(); pop = null; pinned = false; };
+  const open = (el, pin) => {
+    clearTimeout(hideTimer);
+    if (pop && pop._for === el) { pinned ||= pin; return; }
     close();
+    pinned = pin;
     pop = document.createElement('div');
     pop.className = 'pop';
+    pop._for = el;
     pop.textContent = el.dataset.tip;
+    if (el.dataset.learn) {
+      const a = document.createElement('a');
+      a.href = `learn.html#${el.dataset.learn}`;
+      a.className = 'pop-learn';
+      a.textContent = 'Learn more';
+      pop.append(' ', a);
+    }
+    pop.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+    pop.addEventListener('mouseleave', () => { if (!pinned) hideTimer = setTimeout(close, 150); });
     document.body.append(pop);
     const r = el.getBoundingClientRect();
     const w = pop.offsetWidth, h = pop.offsetHeight;
     pop.style.left = Math.max(12, Math.min(innerWidth - w - 12, r.left)) + 'px';
     pop.style.top = (r.bottom + h + 12 > innerHeight ? r.top - h - 8 : r.bottom + 8) + 'px';
   };
-  document.addEventListener('mouseover', (e) => { const t = e.target.closest?.('.term'); if (t && matchMedia('(hover: hover)').matches) open(t); });
-  document.addEventListener('mouseout', (e) => { if (e.target.closest?.('.term') && matchMedia('(hover: hover)').matches) close(); });
-  document.addEventListener('click', (e) => { const t = e.target.closest('.term'); if (t) { e.preventDefault(); open(t); } else close(); });
-  document.addEventListener('focusin', (e) => { const t = e.target.closest?.('.term'); if (t) open(t); });
-  document.addEventListener('focusout', close);
+  const hover = () => matchMedia('(hover: hover)').matches;
+  document.addEventListener('mouseover', (e) => { const t = e.target.closest?.('.term'); if (t && hover()) open(t, false); });
+  document.addEventListener('mouseout', (e) => { if (e.target.closest?.('.term') && hover() && !pinned) hideTimer = setTimeout(close, 150); });
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.pop')) return;
+    const t = e.target.closest('.term');
+    if (t) { e.preventDefault(); open(t, true); } else close();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
   addEventListener('scroll', close, { passive: true });
+}
+
+/* ---------- beginner helpers ---------- */
+const RISK_WORD = { lower: 'Lower risk', medium: 'Medium risk', higher: 'Higher risk', unknown: 'Not rated' };
+/** Small colored risk chip; the note shows on hover/tap. */
+export const riskTag = ({ level, note }) =>
+  `<span class="risk r-${level}${note ? ' term' : ''}"${note ? ` data-tip="${esc(note)}" data-learn="risk" tabindex="0"` : ''}>${RISK_WORD[level] || RISK_WORD.unknown}</span>`;
+
+/** Puts a monthly amount in everyday terms: "about a phone bill". */
+export function everyday(monthly) {
+  const scale = [
+    [8, 'a cup of coffee'], [20, 'a streaming subscription'], [45, 'a gym membership'], [90, 'a phone bill'],
+    [160, 'an internet and phone bill'], [350, 'a weekly grocery run, every week'], [650, 'a car payment'],
+    [1300, 'a month of groceries for a family'], [2500, 'rent in a lot of towns'], [Infinity, 'a full month of rent almost anywhere'],
+  ];
+  if (monthly < 2) return 'a little pocket change';
+  return scale.find(([max]) => monthly <= max)[1];
 }
 
 /* ---------- formatting ---------- */

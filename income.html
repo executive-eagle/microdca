@@ -12,21 +12,22 @@
   <main>
     <div class="layout">
       <div>
-        <h1 class="title">Monthly income</h1>
+        <h1 class="title">Bitcoin income</h1>
         <div class="big" id="big"></div>
         <div class="change" id="change">&nbsp;</div>
 
         <div class="chart-wrap"><canvas id="chart" aria-label="Payouts each month, colored by where they went"></canvas></div>
         <div class="rangebar" id="view"><span class="spacer"></span></div>
         <div class="legend" id="legend"></div>
-        <p class="sentence" id="sentence"></p>
+        <p class="summary" id="summary"></p>
+        <p class="sentence adv" id="sentence"></p>
 
         <section class="block">
-          <h2>Key statistics</h2>
+          <h2 id="stats-h">Your results</h2>
           <div class="stats" id="stats"></div>
         </section>
 
-        <section class="block">
+        <section class="block adv">
           <h2>Where your payouts go</h2>
           <p class="sentence">Split every payout into buckets. Reinvest some, buy bitcoin or IBIT with some, pay down margin, cover bills. Then see how each piece did.</p>
           <div class="links" id="route-presets"></div>
@@ -44,20 +45,20 @@
           </div>
         </section>
 
-        <section class="block">
+        <section class="block adv">
           <h2>How each bucket did</h2>
           <div class="rangebar" id="window"><span class="spacer"></span></div>
           <div class="list" id="bucket-results"></div>
           <p class="callout" id="opportunity"></p>
         </section>
 
-        <section class="block" id="margin-block" hidden>
+        <section class="block adv" id="margin-block" hidden>
           <h2>Margin loan</h2>
           <div class="stats" id="margin-stats"></div>
         </section>
 
         <section class="block">
-          <h2>Holdings</h2>
+          <h2>What you'd own</h2>
           <div class="list" id="holdings"></div>
         </section>
 
@@ -65,28 +66,41 @@
           <h2>About income investing</h2>
           <p>These investments pay you cash, called a dividend or distribution, just for holding them. Strategy's preferred stocks pay a set yearly rate on a $100 "stated amount". BTCI is an ETF that sells options on bitcoin funds to generate monthly payouts.</p>
           <p>Reinvesting means each payout buys more shares, so the next payout is a little bigger. That snowball is called compounding. Money you spend or use to pay down debt stops compounding. "Opportunity cost" shows what that money could have grown into if it had been invested instead.</p>
+          <p><a class="o" href="learn.html#dividends">Learn how dividends and preferred stock work</a></p>
           <p class="muted">A high yield isn't free money. Preferred dividends can be suspended (STRD's are non-cumulative and wouldn't be paid back), and BTCI's price has fallen as it paid out. Borrowing on margin can force selling in a downturn. Always check total value, not just income.</p>
         </section>
       </div>
 
       <aside class="side">
         <div class="panel">
-          <h3>Build your plan</h3>
-          <div class="prow"><label for="amount">Amount</label><div class="ctl money"><input class="field" id="amount" type="number" inputmode="decimal" min="1" step="1" value="500" /></div></div>
-          <div class="prow"><label for="freq">Repeats</label><select class="field ctl" id="freq"><option value="daily">Every day</option><option value="weekly">Every week</option><option value="monthly" selected>Every month</option></select></div>
-          <div class="prow"><label for="start">Starting</label><input class="field ctl" id="start" type="date" /></div>
-          <div class="prow"><label for="end">Ending</label><input class="field ctl" id="end" type="date" /></div>
-          <div class="prow"><label for="sched" id="sched-lbl">Schedule</label><select class="field ctl" id="sched"><option value="actual">Actual</option><option value="daily">Daily (proposed)</option></select></div>
-          <div class="prow" style="padding-bottom:0"><span class="lbl">Split each purchase</span></div>
-          <div class="links" id="presets"></div>
-          <div class="mix" id="mix"></div>
-          <div class="mix-total" id="mix-total"></div>
-          <div class="add-ticker">
-            <input class="field" id="add-sym" type="text" placeholder="Add a ticker, e.g. MSTY" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Ticker symbol to add" />
-            <button class="btn secondary sm" id="add-btn">Add</button>
+          <h3>Try it</h3>
+          <div class="prow"><label for="amount">I put in</label><div class="ctl money"><input class="field" id="amount" type="number" inputmode="decimal" min="1" step="1" value="500" /></div></div>
+          <div class="quick simple-only" id="quick"></div>
+          <div class="prow"><label for="freq">Every</label><select class="field ctl" id="freq"><option value="daily">Day</option><option value="weekly">Week</option><option value="monthly" selected>Month</option></select></div>
+
+          <div class="simple-only">
+            <div class="label-row">Pick a style</div>
+            <div class="choices" id="styles"></div>
+            <div class="label-row">When it pays me</div>
+            <div class="choices" id="payout-choice"></div>
+            <p class="note-sm" id="simple-period"></p>
           </div>
-          <p class="add-msg" id="add-msg"></p>
-          <div class="panel-foot">Uses real daily prices and real past payouts</div>
+
+          <div class="adv">
+            <div class="prow"><label for="start">Starting</label><input class="field ctl" id="start" type="date" /></div>
+            <div class="prow"><label for="end">Ending</label><input class="field ctl" id="end" type="date" /></div>
+            <div class="prow"><label for="sched" id="sched-lbl">Schedule</label><select class="field ctl" id="sched"><option value="actual">Actual</option><option value="daily">Daily (proposed)</option></select></div>
+            <div class="prow" style="padding-bottom:0"><span class="lbl">Split each purchase</span></div>
+            <div class="links" id="presets"></div>
+            <div class="mix" id="mix"></div>
+            <div class="mix-total" id="mix-total"></div>
+            <div class="add-ticker">
+              <input class="field" id="add-sym" type="text" placeholder="Add a ticker, e.g. MSTY" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Ticker symbol to add" />
+              <button class="btn secondary sm" id="add-btn">Add</button>
+            </div>
+            <p class="add-msg" id="add-msg"></p>
+          </div>
+          <div class="panel-foot">Uses real prices and real past payouts</div>
         </div>
       </aside>
     </div>

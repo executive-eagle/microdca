@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>MicroDCA · Bitcoin, a little at a time</title>
+  <meta name="description" content="See what buying a little bitcoin every day, week or month would be worth today. Free and beginner-friendly." />
+  <meta name="theme-color" content="#000000" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+  <main>
+    <div class="layout">
+      <div>
+        <h1 class="title">Bitcoin, a little at a time</h1>
+        <div class="big" id="big"></div>
+        <div class="change" id="change">&nbsp;</div>
+
+        <div class="chart-wrap"><canvas id="chart" aria-label="Value of your bitcoin over time"></canvas></div>
+        <div class="rangebar" id="range"><span class="spacer"></span><button class="act adv" id="lump-toggle">Compare lump sum</button></div>
+        <div class="legend" id="legend"></div>
+        <p class="summary" id="summary"></p>
+        <p class="sentence adv" id="sentence"></p>
+
+        <section class="block">
+          <h2 id="stats-h">Your results</h2>
+          <div class="stats" id="stats"></div>
+        </section>
+
+        <section class="block">
+          <h2>Little by little vs. all at once</h2>
+          <div class="vs" id="vs"></div>
+          <p class="callout" id="verdict"></p>
+        </section>
+
+        <section class="block about">
+          <h2>Why buy a little at a time?</h2>
+          <p>Buying a set dollar amount on a schedule (say $25 every week) is called dollar cost averaging, or DCA. When bitcoin is cheap, your $25 buys more. When it's expensive, it buys less. You never have to guess the "right" time to buy, and you never have to come up with a big lump of money.</p>
+          <p>Putting everything in on day one (a lump sum) does better when prices mostly rise afterward, and worse if you buy right before a drop. Nobody knows which one is coming.</p>
+          <p><a class="o" href="learn.html#dca">Learn more about buying a little at a time</a></p>
+        </section>
+      </div>
+
+      <aside class="side">
+        <div class="panel">
+          <h3>Try it</h3>
+          <div class="prow"><label for="amount">I put in</label><div class="ctl money"><input class="field" id="amount" type="number" inputmode="decimal" min="1" step="1" value="100" /></div></div>
+          <div class="quick simple-only" id="quick"></div>
+          <div class="prow"><label for="freq">Every</label><select class="field ctl" id="freq"><option value="daily">Day</option><option value="weekly" selected>Week</option><option value="monthly">Month</option></select></div>
+          <div class="prow simple-only"><label for="howlong">For the past</label><select class="field ctl" id="howlong"><option value="1Y">1 year</option><option value="2Y">2 years</option><option value="3Y">3 years</option><option value="5Y" selected>5 years</option><option value="10Y">10 years</option><option value="MAX">Since 2014</option><option value="" disabled>Custom dates</option></select></div>
+          <div class="prow adv"><label for="start">Starting</label><input class="field ctl" id="start" type="date" /></div>
+          <div class="links plan-len adv" id="plan-len"></div>
+          <div class="prow adv"><label for="end">Ending</label><input class="field ctl" id="end" type="date" /></div>
+          <div class="panel-foot" id="panel-foot">Uses real bitcoin prices</div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script type="module" src="/src/dca.js"></script>
+</body>
+</html>

@@ -1,8 +1,8 @@
 import {
-  mountLayout, revealSections, drawInFor, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, intraday, prettyTime, toISO, eachDay, addDays, lineChart, rangeBar, setTrend, roller, downsample, sparkline, rgba,
+  mountLayout, revealSections, riskTag, drawInFor, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, intraday, prettyTime, toISO, eachDay, addDays, lineChart, rangeBar, setTrend, roller, downsample, sparkline, rgba,
   usd, usd0, pct, num, btc, term, changeLine, signClass, prettyDate, todayISO, daysBetween, css, onTheme,
 } from './common.js';
-import { incomeAssets, colorOf, isPayDay, PORTFOLIO, BITCOIN, LIVE_QUOTES_URL } from './config.js';
+import { incomeAssets, colorOf, isPayDay, PORTFOLIO, BITCOIN, LIVE_QUOTES_URL, plainName, riskOf } from './config.js';
 
 mountLayout('portfolio.html');
 
@@ -80,7 +80,7 @@ function headline(value, when, instant = false) {
   setTrend(value >= START);
 }
 
-function split(value, earned) {
+function split(value, earned, isLive = false) {
   const market = value - START - earned;
   const gain = Math.max(market, 0), loss = Math.max(-market, 0);
   // losses are drawn as a hatched slice taken out of your money
@@ -96,6 +96,10 @@ function split(value, earned) {
   $('v-g').className = 'v ' + (signClass(market) || 'pos');
   $('sw-g').style.background = market >= 0 ? 'var(--up)' : 'var(--down)';
   const share = ((earned / START) * 100).toFixed(earned / START < 0.01 ? 3 : 2);
+  const days = Math.max(1, daysBetween(PORTFOLIO.priceDate, todayISO()));
+  if (isLive) $('summary').innerHTML = `We pretended to put <b>$10,000</b> into bitcoin and five income investments on Oct 14, 2026. ` +
+    `It's worth <b>${usd(value)}</b> ${days === 1 ? 'one day later' : `${days} days later`}: dividends have added <span class="o">${usd(earned)}</span>, ` +
+    `and price changes have ${market >= 0 ? `added <span class="pos">${usd(market)}</span>` : `taken away <span class="neg">${usd(-market)}</span>`}.`;
   $('story').innerHTML = market >= 0
     ? `Of the ${usd(value)} total, ${usd0(START)} is your original money, <span class="o">${usd(earned)}</span> came from dividends (${share}% on top of your money), and <span class="pos">${usd(market)}</span> came from prices rising.`
     : `Of the ${usd(value)} total, ${usd0(START)} is your original money and <span class="o">${usd(earned)}</span> came from dividends (${share}% on top of your money), but prices are down <span class="neg">${usd(-market)}</span> since you bought.`;
@@ -109,7 +113,8 @@ function holdingsHTML(row, px) {
     const sp = [PORTFOLIO.startPrices[t], ...spark.slice(1), px[t]];
     const reW = (re / sh) * 100;
     const inc = A[t];
-    const label = inc ? term(t, `${inc.name}. ${inc.about}`) : term(t, 'Bitcoin. Pays no dividends, so it only grows or shrinks with its price.');
+    const tip = inc ? `${inc.name}. ${inc.about}` : 'Bitcoin. Pays no dividends, so it only grows or shrinks with its price.';
+    const label = `${term(plainName(t), tip, inc ? 'dividends' : 'bitcoin')} <span class="muted" style="font-weight:400">${t}</span> ${riskTag(riskOf(t))}`;
     const perHr = inc ? (sh * inc.annual) / 365 / 24 : 0;
     return `<div class="li" data-t="${t}">
       <div><div class="name"><span class="dot" style="background:${colorOf(t)}"></span>${label}<span class="plus"></span></div>
@@ -380,11 +385,11 @@ function refresh(force) {
   if (isWindow()) {
     const v = live();
     windowHeadline(v.value);
-    split(v.value, v.earned);
+    split(v.value, v.earned, true);
   } else if (horizon === 'NOW') {
     const v = live();
     headline(v.value, 'since Oct 15, 2026');
-    split(v.value, v.earned);
+    split(v.value, v.earned, true);
   } else if (force) {
     const r = projection().at(-1);
     headline(r.value, `in ${horizon.replace('Y', '')} years if prices stay flat`);
@@ -436,7 +441,7 @@ function marketBadge(live) {
     A = Object.fromEntries(Object.entries(incomeAssets(data)).filter(([t]) => ASSETS.includes(t)));
     INCOME = Object.keys(A);
     for (const t of ASSETS) prices[t] = priceLookup(data.series[t].prices);
-    $('mix').innerHTML = ASSETS.map((t) => `<div class="prow"><span><span class="dot" style="background:${colorOf(t)}"></span> ${t} ${PORTFOLIO.allocation[t]}%</span><span class="muted">${usd0((START * PORTFOLIO.allocation[t]) / 100)} at ${usd(PORTFOLIO.startPrices[t])}</span></div>`).join('');
+    $('mix').innerHTML = ASSETS.map((t) => `<div class="prow"><span><span class="dot" style="background:${colorOf(t)}"></span> ${plainName(t)} ${PORTFOLIO.allocation[t]}%</span><span class="muted">${usd0((START * PORTFOLIO.allocation[t]) / 100)} at ${usd(PORTFOLIO.startPrices[t])}</span></div>`).join('');
     $('sched-lbl').innerHTML = term('Payouts', 'Daily (proposed): Strategy shareholders vote Oct 28, 2026 on paying every calendar day (STRC from Nov 2, 2026; STRF, STRK, STRD from Jan 4, 2027). Every holding here reinvests daily. Actual schedule: money still accrues daily, but is only reinvested on real pay dates (STRC twice a month, STRF/STRK/STRD quarterly, BTCI monthly).');
     $('earn-lbl').innerHTML = term('Dividends earned', 'Each income holding earns its yearly dividend ÷ 365 per share every day. This counter adds it up second by second.');
     $('split-h').innerHTML = `Where your ${term('money', 'Your money = the $10K you started with. Dividends = income paid to you and reinvested. Market move = how much prices have gone up or down.')} came from`;

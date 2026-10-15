@@ -341,3 +341,93 @@ main .layout > div > .rangebar { animation: fade 0.6s 0.35s ease both; }
 .rm-t { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; }
 .rm-t:hover { color: var(--down); }
 .mix-row b .term { border-bottom-style: dotted; }
+
+/* ================= beginner layer ================= */
+[data-mode='simple'] .adv { display: none !important; }
+[data-mode='advanced'] .simple-only { display: none !important; }
+
+/* header: Simple / Advanced */
+.mode-switch { display: flex; background: var(--field); border: 1px solid var(--line); border-radius: 999px; padding: 3px; margin-left: 4px; }
+.mode-switch button { border: 0; background: none; padding: 5px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.mode-switch button.active { background: var(--fg); color: var(--bg); }
+.site-header nav + .mode-switch { margin-left: 8px; }
+@media (max-width: 760px) {
+  .mode-switch { margin-left: auto; }
+  .mode-switch + .icon-btn { margin-left: 4px; }
+  .mode-switch button { padding: 5px 10px; }
+}
+
+/* popover "Learn more" link */
+.pop-learn { color: var(--brand); font-weight: 600; white-space: nowrap; }
+
+/* risk chips */
+.risk { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.01em; padding: 2px 8px; border-radius: 999px; white-space: nowrap; vertical-align: middle; }
+.risk.term { border-bottom: 0; cursor: help; }
+.r-lower { background: rgba(0, 200, 5, 0.14); color: var(--up); }
+.r-medium { background: rgba(227, 179, 65, 0.16); color: #D6A12B; }
+.r-higher { background: rgba(255, 80, 0, 0.14); color: var(--down); }
+.r-unknown { background: var(--field); color: var(--muted); }
+
+/* plain-English summary */
+.summary { font-size: 19px; line-height: 1.5; letter-spacing: -0.005em; margin-top: 22px; max-width: 640px; color: var(--fg-2); }
+.summary b { color: var(--fg); font-weight: 600; }
+.summary .pos, .summary .neg, .summary .o { font-weight: 600; }
+@media (max-width: 760px) { .summary { font-size: 17px; } }
+
+/* quick amount chips */
+.quick { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; padding: 0 0 6px; }
+.quick button { border: 1px solid var(--line-2); background: none; color: var(--fg); padding: 5px 11px; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.quick button:hover, .quick button.active { border-color: var(--brand); color: var(--brand); }
+
+/* big choice cards (styles, payout choice) */
+.choices { display: grid; gap: 8px; margin: 6px 0 4px; }
+.choice { display: grid; grid-template-columns: 18px 1fr; gap: 4px 10px; align-items: start; text-align: left; width: 100%; border: 1px solid var(--line-2); background: none; color: var(--fg); border-radius: 8px; padding: 12px 12px; cursor: pointer; font: inherit; }
+.choice:hover { border-color: var(--muted); }
+.choice.active { border-color: var(--brand); background: rgba(247, 147, 26, 0.07); }
+.choice .radio { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line-2); margin-top: 2px; }
+.choice.active .radio { border: 5px solid var(--brand); }
+.choice .t { font-weight: 600; font-size: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.choice .d { grid-column: 2; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.label-row { font-size: 14px; font-weight: 500; padding: 12px 0 2px; }
+.note-sm { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; }
+
+/* ================= home ================= */
+.home-hero { padding: 36px 0 8px; max-width: 720px; }
+.home-hero h1 { font-size: clamp(34px, 6vw, 52px); line-height: 1.08; letter-spacing: -0.03em; font-weight: 700; }
+.home-hero h1 em { font-style: normal; color: var(--brand); }
+.home-hero p { font-size: 18px; color: var(--fg-2); margin: 16px 0 0; max-width: 600px; }
+.btc-now { display: inline-flex; align-items: baseline; gap: 10px; margin-top: 22px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; }
+.btc-now b { font-size: 16px; }
+.paths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 36px; }
+@media (max-width: 900px) { .paths { grid-template-columns: 1fr; } }
+.path { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; padding: 22px 22px 20px; transition: border-color 0.2s, transform 0.2s; }
+@media (min-width: 901px) { .path { min-height: 230px; } }
+.path:hover { border-color: var(--brand); transform: translateY(-2px); }
+.path .q { font-size: 20px; font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
+.path .a { color: var(--fg-2); font-size: 14.5px; margin-top: 10px; flex: 1; }
+.path .a b { color: var(--fg); }
+.path .go { color: var(--brand); font-weight: 600; font-size: 14px; margin-top: 16px; }
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; padding-top: 20px; }
+@media (max-width: 760px) { .steps { grid-template-columns: 1fr; gap: 16px; } }
+.step .n { width: 28px; height: 28px; border-radius: 50%; background: var(--brand); color: #000; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.step h3 { font-size: 16px; margin: 10px 0 4px; }
+.step p { margin: 0; color: var(--fg-2); font-size: 14.5px; }
+
+/* ================= learn ================= */
+.learn-head { padding: 28px 0 0; max-width: 680px; }
+.learn-head p { color: var(--fg-2); font-size: 17px; margin: 12px 0 0; }
+.toc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+.toc a { border: 1px solid var(--line-2); padding: 6px 13px; border-radius: 999px; font-size: 13.5px; font-weight: 600; }
+.toc a:hover { border-color: var(--brand); color: var(--brand); }
+.lesson { scroll-margin-top: 80px; border-top: 1px solid var(--line); padding: 30px 0 4px; max-width: 680px; }
+.lesson h2 { font-size: 24px; }
+.lesson .tl-dr { font-size: 17px; color: var(--fg); margin: 10px 0 0; font-weight: 500; }
+.lesson p { color: var(--fg-2); margin: 12px 0 0; }
+.lesson .try { display: inline-block; margin-top: 14px; color: var(--brand); font-weight: 600; }
+.lesson:target h2 { color: var(--brand); }
+.faq dt { font-weight: 600; margin-top: 18px; }
+.faq dd { margin: 4px 0 0; color: var(--fg-2); }
+.risk-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
+.risk-table td { padding: 10px 8px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.risk-table td:first-child { font-weight: 600; white-space: nowrap; }
+.risk-table td:nth-child(2) { white-space: nowrap; }

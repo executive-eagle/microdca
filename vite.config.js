@@ -8,8 +8,10 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
+        bitcoin: resolve(__dirname, 'bitcoin.html'),
         income: resolve(__dirname, 'income.html'),
         portfolio: resolve(__dirname, 'portfolio.html'),
+        learn: resolve(__dirname, 'learn.html'),
       },
     },
   },

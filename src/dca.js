@@ -1,17 +1,19 @@
 import {
-  mountLayout, revealSections, drawInFor, loadData, priceLookup, liveBTC, intraday, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller,
+  mountLayout, revealSections, isSimple, onMode, drawInFor, loadData, priceLookup, liveBTC, intraday, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller,
   usd, usd0, pct, btc, stat, term, changeLine, signClass, prettyDate, prettyTime, addDays, toISO, todayISO, css, onTheme, FREQ_WORD,
 } from './common.js';
 import { LIVE_QUOTES_URL } from './config.js';
 
-mountLayout('index.html');
+mountLayout('bitcoin.html');
 
 const $ = (id) => document.getElementById(id);
 const big = roller($('big'));
 const state = { amount: 100, freq: 'weekly', start: null, end: null };
 let price, chart, lump = false, result, plan = '5Y', view = 'ALL', animateNext = true, liveNow = null, bars = {};
 
-const PLAN_LENGTHS = [['1Y', '1Y'], ['2Y', '2Y'], ['5Y', '5Y'], ['10Y', '10Y'], ['MAX', 'Max']];
+const PLAN_LENGTHS = [['1Y', '1Y'], ['2Y', '2Y'], ['3Y', '3Y'], ['5Y', '5Y'], ['10Y', '10Y'], ['MAX', 'Max']];
+const QUICK = [10, 25, 50, 100, 250];
+const YEARS_WORD = { '1Y': 'year', '2Y': '2 years', '3Y': '3 years', '5Y': '5 years', '10Y': '10 years' };
 const VIEWS = [['1D', '1D'], ['1W', '1W'], ['1M', '1M'], ['3M', '3M'], ['1Y', '1Y'], ['5Y', '5Y'], ['10Y', '10Y'], ['ALL', 'Max']];
 const VIEW_LABEL = { '1D': 'Past day', '1W': 'Past week', '1M': 'Past month', '3M': 'Past 3 months', '1Y': 'Past year', '5Y': 'Past 5 years', '10Y': 'Past 10 years' };
 const startFor = (r) => (r === 'MAX' ? price.first : addDays(state.end, -Math.round(365.25 * parseInt(r))));
@@ -75,29 +77,41 @@ function render() {
   if (!(state.amount > 0) || state.start >= state.end) return;
   const r = (result = simulate());
   const gain = r.value - r.invested;
+  // the one sentence a beginner needs
+  const period = plan && plan !== 'MAX' && isLive() ? `for the past ${YEARS_WORD[plan]}` : `from ${prettyDate(state.start)} to ${isLive() ? 'today' : prettyDate(state.end)}`;
+  const howMuch = gain >= 0
+    ? `That's <span class="pos">${usd0(gain)} more</span> than you put in${r.value >= r.invested * 1.95 ? `, about <b>${(r.value / r.invested).toFixed(1)}×</b> your money` : ''}.`
+    : `That's <span class="neg">${usd0(-gain)} less</span> than you put in, because bitcoin's price is lower now than your average buy.`;
+  $('summary').innerHTML = `If you'd bought <b>${usd0(state.amount)}</b> of bitcoin every ${{ daily: 'day', weekly: 'week', monthly: 'month' }[state.freq]} ${period}, you'd have put in <b>${usd0(r.invested)}</b> and it would be worth <b>${usd0(r.value)}</b> today. ${howMuch}`;
   $('sentence').textContent = `Buying ${usd0(state.amount)} of bitcoin ${FREQ_WORD[state.freq]} from ${prettyDate(state.start)} to ${isLive() ? 'today' : prettyDate(state.end)}.`;
 
-  $('stats').innerHTML = [
+  $('stats-h').textContent = isSimple() ? 'Your results' : 'Key statistics';
+  $('stats').innerHTML = (isSimple() ? [
+    stat('You put in', usd(r.invested)),
+    stat('Worth today', usd(r.value)),
+    stat(gain >= 0 ? 'You gained' : 'You lost', usd(Math.abs(gain)), signClass(gain)),
+    stat(term('Bitcoin you own', 'You don\'t have to buy a whole bitcoin. Small buys add up to a piece of one. 1 bitcoin = 100,000,000 "sats".', 'bitcoin'), btc(r.coins)),
+  ] : [
     stat(term('Total invested', 'Every purchase added together.'), usd(r.invested)),
     stat(term('Current value', 'Your bitcoin times the bitcoin price on the end date.'), usd(r.value)),
     stat('Total return', `${usd(gain)}`, signClass(gain)),
     stat('Return', pct((gain / r.invested) * 100), signClass(gain)),
-    stat(term('BTC accumulated', '1 bitcoin = 100,000,000 sats, so small buys add up to fractions of a coin.'), btc(r.coins)),
-    stat(term('Average cost', 'The average price you paid per bitcoin across every buy. Also called your cost basis.'), usd(r.avg)),
+    stat(term('BTC accumulated', '1 bitcoin = 100,000,000 sats, so small buys add up to fractions of a coin.', 'bitcoin'), btc(r.coins)),
+    stat(term('Average cost', 'The average price you paid per bitcoin across every buy. Also called your cost basis.', 'dca'), usd(r.avg)),
     stat(isLive() ? 'Bitcoin price' : 'Price on end date', usd(r.endPrice)),
     stat('Purchases', r.buys.toLocaleString()),
-  ].join('');
+  ]).join('');
 
   const max = Math.max(r.value, r.lumpValue, r.invested);
   const row = (k, v, color, sub) => `<div class="vs-row"><div class="vs-top"><b>${k}</b><span>${usd0(v)} <span class="${signClass(v - r.invested)}">${sub}</span></span></div><div class="track"><i style="width:${(v / max) * 100}%;background:${color}"></i></div></div>`;
   $('vs').innerHTML =
-    row(`DCA ${FREQ_WORD[state.freq]}`, r.value, 'var(--brand)', pct(((r.value - r.invested) / r.invested) * 100)) +
-    row(`Lump sum on ${prettyDate(state.start)}`, r.lumpValue, 'var(--fg-2)', pct(((r.lumpValue - r.invested) / r.invested) * 100)) +
+    row(`A little ${FREQ_WORD[state.freq]}`, r.value, 'var(--brand)', pct(((r.value - r.invested) / r.invested) * 100)) +
+    row(`All at once on ${prettyDate(state.start)}`, r.lumpValue, 'var(--fg-2)', pct(((r.lumpValue - r.invested) / r.invested) * 100)) +
     row('Money put in', r.invested, 'var(--principal)', '');
   const diff = r.value - r.lumpValue;
   $('verdict').textContent = diff >= 0
-    ? `DCA came out ${usd0(diff)} ahead. Spreading the buys out avoided going all in at ${usd0(r.startPrice)}.`
-    : `Lump sum came out ${usd0(-diff)} ahead because bitcoin mostly rose after ${prettyDate(state.start)}. DCA still meant never having to time the market.`;
+    ? `Buying a little at a time came out ${usd0(diff)} ahead here. Spreading the buys out meant you didn't go all in at ${usd0(r.startPrice)}.`
+    : `Putting it all in at once came out ${usd0(-diff)} ahead here, because bitcoin mostly rose after ${prettyDate(state.start)}. But that only works if you have the whole amount on day one, and nobody knows ahead of time which way prices will go.`;
   draw();
 }
 
@@ -156,6 +170,8 @@ function syncViews() {
 function sync() {
   $('amount').value = state.amount; $('freq').value = state.freq; $('start').value = state.start; $('end').value = state.end;
   $('plan-len').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.p === plan));
+  $('howlong').value = plan || '';
+  $('quick').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v === state.amount));
   syncViews();
 }
 
@@ -171,10 +187,13 @@ function sync() {
     const clamp = (v) => (v < price.first ? price.first : v > price.last ? price.last : v);
 
     $('plan-len').innerHTML = PLAN_LENGTHS.map(([k, l]) => `<button data-p="${k}">Last ${l}</button>`).join('');
+    $('quick').innerHTML = QUICK.map((v) => `<button data-v="${v}">$${v}</button>`).join('');
+    $('quick').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.amount = +b.dataset.v; sync(); render(); };
+    $('howlong').onchange = (e) => { if (!e.target.value) return; plan = e.target.value; state.end = price.last; state.start = startFor(plan); animateNext = true; sync(); render(); };
     $('plan-len').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; plan = b.dataset.p; state.end = price.last; state.start = startFor(plan); animateNext = true; sync(); render(); };
     rangeBar($('range'), VIEWS, view, (w) => { view = w; animateNext = true; draw(); });
     $('lump-toggle').onclick = () => { lump = !lump; animateNext = true; $('lump-toggle').textContent = lump ? 'Hide lump sum' : 'Compare lump sum'; draw(); };
-    $('amount').oninput = (e) => { state.amount = +e.target.value; render(); };
+    $('amount').oninput = (e) => { state.amount = +e.target.value; $('quick').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v === state.amount)); render(); };
     $('freq').onchange = (e) => { state.freq = e.target.value; render(); };
     $('start').onchange = (e) => { if (e.target.value) { state.start = clamp(e.target.value); plan = null; sync(); render(); } };
     $('end').onchange = (e) => { if (e.target.value) { state.end = clamp(e.target.value); sync(); render(); } };
@@ -204,3 +223,4 @@ function sync() {
   }
 })();
 onTheme(() => result && draw());
+onMode(() => { if (!result) return; if (isSimple() && lump) { lump = false; $('lump-toggle').textContent = 'Compare lump sum'; } render(); });

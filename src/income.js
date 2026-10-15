@@ -1,8 +1,8 @@
 import {
-  mountLayout, revealSections, drawInFor, reduceMotion, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller, Chart,
+  mountLayout, revealSections, isSimple, onMode, riskTag, everyday, drawInFor, reduceMotion, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller, Chart,
   usd, usd0, pct, btc, num, stat, term, changeLine, signClass, prettyDate, parseISO, addDays, daysBetween, todayISO, sparkline, css, onTheme, FREQ_WORD,
 } from './common.js';
-import { incomeAssets, buyTargets, colorOf, nameOf, PRESETS, PAYOUT_PRESETS, BITCOIN, LIVE_QUOTES_URL, setCustom, customColor, inferSchedule, isCustom } from './config.js';
+import { incomeAssets, buyTargets, colorOf, nameOf, PRESETS, PAYOUT_PRESETS, BITCOIN, LIVE_QUOTES_URL, setCustom, customColor, inferSchedule, isCustom, plainName, riskOf, STYLES } from './config.js';
 
 mountLayout('income.html');
 
@@ -198,9 +198,17 @@ function render() {
   setTrend(true);
   headline();
   const late = r.start !== state.start ? ` (from ${prettyDate(r.start)}, once everything you picked was trading)` : ` from ${prettyDate(r.start)}`;
+  $('summary').innerHTML = summaryText(r);
+  $('simple-period').innerHTML = `Uses real prices from ${prettyDate(r.start)} to ${r.end === todayISO() ? 'today' : prettyDate(r.end)}. That's as far back as all of these funds have existed.`;
   $('sentence').innerHTML = `Investing ${usd0(state.amount)} ${FREQ_WORD[state.freq]}${late}. Monthly income is an ${term('estimate', 'What you own today × each fund\'s current yearly payout, divided by 12. Rates can change or stop.')} at today's rates.`;
 
-  const stats = [
+  $('stats-h').textContent = isSimple() ? 'Your results' : 'Key statistics';
+  const stats = isSimple() ? [
+    stat('You put in', usd(r.invested)),
+    stat(term('Worth today', 'What everything you\'d own is worth right now, including anything payouts bought.'), usd(r.value)),
+    stat(term('Paid to you so far', 'Every payout (dividend) you\'d have received along the way.', 'dividends'), usd(r.totalDiv), 'pos'),
+    stat(term('Income now', 'About how much it pays per month today, at current rates. Rates can change or stop.', 'dividends'), usd(r.monthly) + '/mo'),
+  ] : [
     stat(term('Total invested', 'Every scheduled purchase added together.'), usd(r.invested)),
     stat(term('Current value', 'Everything you own today, including anything bought with payouts and any savings cash.'), usd(r.value)),
     stat(term('Total return', r.margin ? 'Current value, plus how much your margin loan shrank (or minus how much it grew), minus what you put in.' : 'Current value minus what you put in.'), `${usd(gain)} (${pct((gain / r.invested) * 100)})`, signClass(gain)),
@@ -210,16 +218,64 @@ function render() {
     stat(term('Yield on cost', 'Yearly income divided by the money you put in.'), ((r.annual / r.invested) * 100).toFixed(2) + '%'),
     stat('Purchases', r.buys.toLocaleString()),
   ];
-  if (r.spent) stats.push(stat('Spent on bills', usd(r.spent)));
-  if (r.cash) stats.push(stat('Savings cash', usd(r.cash)));
-  if (r.margin) stats.push(stat(term('Value after margin', 'Current value minus what you still owe on margin.'), usd(r.net)));
+  if (r.spent && !isSimple()) stats.push(stat('Spent on bills', usd(r.spent)));
+  if (r.cash) stats.push(stat(isSimple() ? 'Cash paid to you' : 'Savings cash', usd(r.cash)));
+  if (r.margin && !isSimple()) stats.push(stat(term('Value after margin', 'Current value minus what you still owe on margin.'), usd(r.net)));
   $('stats').innerHTML = stats.join('');
 
   renderBuckets(r);
   renderMargin(r);
   holdings(r);
+  syncSimple();
   draw();
   save();
+}
+
+/* ---------- Simple mode ---------- */
+const PAYOUT_CHOICES = [
+  { key: 'same', label: 'Reinvest it', d: 'Payouts buy more of the same funds, so the next payout is bigger. Grows fastest.' },
+  { key: 'buy:BTC', label: 'Turn it into bitcoin', d: 'Every payout buys a little bitcoin.' },
+  { key: 'cash', label: 'Pay me in cash', d: 'Keep the payouts as spending money. Your income stays flat.' },
+];
+const sameMix = (a, b) => TICKERS.every((t) => (a[t] || 0) === (b[t] || 0));
+const activeStyle = () => STYLES.find((st) => sameMix(state.mix, st.mix));
+const activePayout = () => (state.buckets.length === 1 ? PAYOUT_CHOICES.find((c) => c.key === bucketKey(state.buckets[0])) : null);
+
+function renderSimple() {
+  $('styles').innerHTML = STYLES.map((st, i) => `<button class="choice" data-i="${i}" type="button"><span class="radio"></span><span class="t">${st.label} ${riskTag({ level: st.risk, note: '' })}</span><span class="d">${st.blurb}</span></button>`).join('');
+  $('payout-choice').innerHTML = PAYOUT_CHOICES.map((c) => `<button class="choice" data-k="${c.key}" type="button"><span class="radio"></span><span class="t">${c.label}</span><span class="d">${c.d}</span></button>`).join('');
+  $('quick').innerHTML = [100, 250, 500, 1000].map((v) => `<button data-v="${v}">$${v}</button>`).join('');
+  $('styles').onclick = (e) => {
+    const b = e.target.closest('.choice'); if (!b) return;
+    const st = STYLES[+b.dataset.i];
+    state.mix = Object.fromEntries(TICKERS.map((t) => [t, st.mix[t] || 0]));
+    renderMix(); animateNext = true; render();
+  };
+  $('payout-choice').onclick = (e) => {
+    const b = e.target.closest('.choice'); if (!b) return;
+    state.buckets = [{ key: b.dataset.k, pct: 100 }];
+    renderBucketEditor(); animateNext = true; render();
+  };
+  $('quick').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.amount = +b.dataset.v; $('amount').value = state.amount; render(); };
+}
+function syncSimple() {
+  const st = activeStyle(), pc = activePayout();
+  $('styles').querySelectorAll('.choice').forEach((b) => b.classList.toggle('active', STYLES[+b.dataset.i] === st));
+  $('payout-choice').querySelectorAll('.choice').forEach((b) => b.classList.toggle('active', pc && b.dataset.k === pc.key));
+  $('quick').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v === state.amount));
+}
+
+/** The plain-English answer at the top of the page. */
+function summaryText(r) {
+  const st = activeStyle(), pc = activePayout();
+  const what = st ? `the <b>${st.label}</b> mix` : 'your mix';
+  const every = { daily: 'a day', weekly: 'a week', monthly: 'a month' }[state.freq];
+  const paidHow = pc?.key === 'cash' ? 'paid you' : pc?.key === 'buy:BTC' ? 'paid out (turned into bitcoin)' : 'paid out (and reinvested)';
+  const gain = r.value - r.invested + (r.margin ? r.margin.start - r.margin.bal : 0); // value already includes any cash
+  return `If you'd put <b>${usd0(state.amount)} ${every}</b> into ${what} since ${prettyDate(r.start)}, you'd have put in <b>${usd0(r.invested)}</b>. ` +
+    `It would have ${paidHow} <span class="pos">${usd0(r.totalDiv)}</span> along the way, and everything${r.cash ? ', including that cash,' : ''} would be worth <b>${usd0(r.value)}</b> today` +
+    `${Math.abs(gain) >= 1 ? ` (${gain >= 0 ? `<span class="pos">${usd0(gain)} more</span>` : `<span class="neg">${usd0(-gain)} less</span>`} than you put in${pc?.key === 'cash' ? ', counting the cash' : ''})` : ''}. ` +
+    `Right now it pays about <b>${usd0(r.monthly)} a month</b>, roughly ${everyday(r.monthly)}.`;
 }
 
 function renderFlow() {
@@ -296,7 +352,7 @@ function holdings(r) {
     const up = isInc ? val + 0 >= cost : spark.at(-1) >= spark[0];
     const re = (r.fromPayouts[t] / r.shares[t]) * 100;
     return `<div class="li">
-      <div><div class="name"><span class="dot" style="background:${colorOf(t)}"></span>${term(t, nameOf(t) + (A[t] ? '. ' + A[t].about : ''))}</div>
+      <div><div class="name"><span class="dot" style="background:${colorOf(t)}"></span>${term(plainName(t), nameOf(t) + (A[t] ? '. ' + A[t].about : ''))} <span class="muted" style="font-weight:400">${t}</span> ${riskTag(riskOf(t))}</div>
       <div class="sub">${t === BITCOIN.ticker ? btc(r.shares[t]) : num(r.shares[t], 3) + ' shares'}${isInc ? ` · ${usd((r.shares[t] * A[t].annual) / 12)}/mo` : ''}${cost ? ` · put in ${usd0(cost)}` : ''}</div></div>
       ${sparkline(downsample(spark, 60), spark.at(-1) >= spark[0] ? css('--up') : css('--down'))}
       <div class="chip-val ${up ? '' : 'down'}">${usd(val)}</div>
@@ -578,6 +634,7 @@ function bindRouter() {
     $('sched-lbl').innerHTML = term('Schedule', 'Actual: paid on the real historical dates (STRC twice a month, STRF/STRK/STRD quarterly, BTCI monthly). Daily (proposed): Strategy shareholders vote Oct 28, 2026 on paying every calendar day. This spreads each preferred\'s payouts across every day. Funds without a proposal keep their normal schedule.');
     rangeBar($('view'), [['income', 'Payouts'], ['value', 'Value']], view, (v) => { view = v; animateNext = true; draw(); });
     bindRouter();
+    renderSimple();
     render();
     revealSections();
 
@@ -588,3 +645,4 @@ function bindRouter() {
   }
 })();
 onTheme(() => result && (holdings(result), draw()));
+onMode(() => result && render());

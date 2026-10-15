@@ -58,6 +58,18 @@ export const colorOf = (t) => everything().find((a) => a.ticker === t)?.color ||
 export const nameOf = (t) => everything().find((a) => a.ticker === t)?.name || t;
 export const isCustom = (t) => CUSTOM.some((a) => a.ticker === t);
 
+/** Beginner-friendly name, e.g. "Strategy Stretch" for STRC. */
+export const plainName = (t) => { const a = everything().find((x) => x.ticker === t); return a?.plain_name || a?.name || t; };
+/** { level: 'lower'|'medium'|'higher'|'unknown', note } — risk relative to the other funds on the site. */
+export function riskOf(t) {
+  const a = everything().find((x) => x.ticker === t);
+  if (!a) return { level: 'unknown', note: '' };
+  if (a.ticker === raw.bitcoin.ticker) return { level: 'higher', note: 'Bitcoin\'s price can swing a lot, sometimes 20% or more in a month.' };
+  if (CUSTOM.includes(a)) return { level: 'unknown', note: 'You added this one, so MicroDCA hasn\'t rated it.' };
+  return { level: a.risk || 'unknown', note: a.risk_note || '' };
+}
+export const STYLES = raw.simple_styles || [];
+
 /** Is `iso` a scheduled payout date for this asset under its normal schedule? */
 export function isPayDay(asset, iso) {
   const day = +iso.slice(8), month = +iso.slice(5, 7);

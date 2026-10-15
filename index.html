@@ -3,55 +3,52 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>MicroDCA · Bitcoin DCA Calculator</title>
-  <meta name="description" content="See what buying a little bitcoin every day, week or month would be worth today. Free bitcoin dollar cost averaging backtester." />
+  <title>MicroDCA · Grow your money a little at a time</title>
+  <meta name="description" content="See what small, regular amounts in bitcoin, or in investments that pay monthly income, would have turned into. Free, no sign-up, no real money." />
   <meta name="theme-color" content="#000000" />
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
 </head>
 <body>
   <main>
-    <div class="layout">
-      <div>
-        <h1 class="title">Bitcoin DCA</h1>
-        <div class="big" id="big"></div>
-        <div class="change" id="change">&nbsp;</div>
+    <section class="home-hero">
+      <h1>Grow your money <em>a little at a time.</em></h1>
+      <p>MicroDCA shows what happens when you put small amounts into bitcoin, or into investments that pay you cash every month. It's free, there's nothing to sign up for, and no real money is involved.</p>
+      <div class="btc-now" id="btc-now"><span class="muted">Bitcoin right now</span> <b>…</b></div>
+    </section>
 
-        <div class="chart-wrap"><canvas id="chart" aria-label="Value of your bitcoin over time"></canvas></div>
-        <div class="rangebar" id="range"><span class="spacer"></span><button class="act" id="lump-toggle">Compare lump sum</button></div>
-        <div class="legend" id="legend"></div>
-        <p class="sentence" id="sentence"></p>
-
-        <section class="block">
-          <h2>Key statistics</h2>
-          <div class="stats" id="stats"></div>
-        </section>
-
-        <section class="block">
-          <h2>DCA vs. lump sum</h2>
-          <div class="vs" id="vs"></div>
-          <p class="callout" id="verdict"></p>
-        </section>
-
-        <section class="block about">
-          <h2>About DCA</h2>
-          <p>Dollar cost averaging means buying a fixed dollar amount on a schedule (say $100 every week) no matter what the price is. When bitcoin is cheap, your $100 buys more. When it's expensive, it buys less. You never have to guess the right time to buy.</p>
-          <p>A lump sum means putting everything in on day one. It wins when prices mostly rise afterward, and it hurts more if you buy right before a drop.</p>
-        </section>
-      </div>
-
-      <aside class="side">
-        <div class="panel">
-          <h3>Buy Bitcoin</h3>
-          <div class="prow"><label for="amount">Amount</label><div class="ctl money"><input class="field" id="amount" type="number" inputmode="decimal" min="1" step="1" value="100" /></div></div>
-          <div class="prow"><label for="freq">Repeats</label><select class="field ctl" id="freq"><option value="daily">Every day</option><option value="weekly" selected>Every week</option><option value="monthly">Every month</option></select></div>
-          <div class="prow"><label for="start">Starting</label><input class="field ctl" id="start" type="date" /></div>
-          <div class="links plan-len" id="plan-len"></div>
-          <div class="prow"><label for="end">Ending</label><input class="field ctl" id="end" type="date" /></div>
-          <div class="panel-foot" id="panel-foot">Uses real daily bitcoin closing prices</div>
-        </div>
-      </aside>
+    <div class="paths">
+      <a class="path" href="bitcoin.html">
+        <div class="q">What if I'd bought a little bitcoin every week?</div>
+        <div class="a" id="teaser-btc">Pick an amount and see what it would be worth today, using real prices.</div>
+        <div class="go">Try it</div>
+      </a>
+      <a class="path" href="income.html">
+        <div class="q">Can bitcoin pay me monthly income?</div>
+        <div class="a" id="teaser-income">Some bitcoin-related investments pay you cash every month. See how much, and the risks.</div>
+        <div class="go">See the income</div>
+      </a>
+      <a class="path" href="portfolio.html">
+        <div class="q">Watch a $10,000 portfolio, live</div>
+        <div class="a">A pretend $10,000 split between bitcoin and income investments on Oct 14, 2026. It updates every 15 seconds and shows exactly what dividends add.</div>
+        <div class="go">Watch it</div>
+      </a>
     </div>
+
+    <section class="block">
+      <h2>How it works</h2>
+      <div class="steps">
+        <div class="step"><div class="n">1</div><h3>Pick an amount</h3><p>Even $10 works. You don't need to buy a whole bitcoin or a whole share.</p></div>
+        <div class="step"><div class="n">2</div><h3>Pick how often</h3><p>Every day, week or month. Buying on a schedule means you never have to guess the right moment.</p></div>
+        <div class="step"><div class="n">3</div><h3>See what it becomes</h3><p>MicroDCA replays real prices and real payouts, so you can see what would have happened.</p></div>
+      </div>
+    </section>
+
+    <section class="block about">
+      <h2>Before you start</h2>
+      <p>Everything here uses real past prices, but the past isn't a promise. Bitcoin has dropped more than 50% several times, and income investments can cut or stop their payouts. Only invest money you won't need soon, and never more than you can afford to lose.</p>
+      <p><a class="o" href="learn.html">New to all of this? Read the 5-minute guide</a></p>
+    </section>
   </main>
-  <script type="module" src="/src/dca.js"></script>
+  <script type="module" src="/src/home.js"></script>
 </body>
 </html>
