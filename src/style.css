@@ -583,3 +583,34 @@ html, body { overflow-x: clip; }
   .layout.inputs-first > .side .panel h3 { font-size: 22px; padding-bottom: 14px; }
   .layout.inputs-first > .side { border-bottom: 1px solid var(--line); padding-bottom: 8px; }
 }
+
+/* ================= STRC & SATA tracker ================= */
+.trk-head { max-width: 680px; }
+.trk-head .sentence { font-size: 16px; }
+.trk-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); gap: 40px; align-items: end; margin-top: 26px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+@media (max-width: 860px) { .trk-hero { grid-template-columns: 1fr; gap: 12px; } }
+.trk-total .k { font-size: 14px; font-weight: 600; color: var(--fg-2); }
+.trk-total .big { font-size: 46px; margin-top: 4px; }
+@media (max-width: 760px) { .trk-total .big { font-size: 34px; } }
+.trk-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 22px; border-top: 1px solid var(--line); }
+.tile { padding: 16px 16px 16px 0; }
+.tile + .tile { padding-left: 16px; border-left: 1px solid var(--line); }
+.tile-top { display: flex; align-items: center; gap: 7px; font-size: 14px; }
+.tile-top .muted { font-size: 12.5px; }
+.tile-price { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; margin: 6px 0 4px; }
+.tile-sub { font-size: 12.5px; color: var(--muted); margin-top: 8px; line-height: 1.6; }
+.tile-sub b { color: var(--fg-2); font-weight: 600; }
+.atm { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.atm::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.atm.on { color: var(--up); }
+.atm.on::before { animation: blink 1.4s infinite; }
+.atm.off { color: var(--muted); }
+.trk-stack { position: relative; }
+.trk-stack canvas { width: 100%; height: 300px; display: block; }
+@media (max-width: 860px) { .trk-stack canvas { height: 240px; } }
+.stack-foot { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--muted); padding: 6px 0 10px; }
+.stack-foot .act { background: none; border: 0; color: var(--brand); font-weight: 600; font-size: 13px; cursor: pointer; padding: 4px 0; }
+.big.sm { font-size: 28px; margin-top: 16px; }
+.chart-wrap.short { height: 210px; }
+.tracker-part { max-width: 520px; }
+.tracker-part label { font-size: 14px; }

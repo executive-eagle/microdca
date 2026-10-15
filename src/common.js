@@ -38,6 +38,7 @@ const ICONS = {
   dca: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/></svg>',
   income: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>',
   live: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.5 6"/></svg>',
+  tracker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="17" rx="7" ry="2.5"/><path d="M5 17v-3"/><path d="M19 17v-3"/><ellipse cx="12" cy="14" rx="7" ry="2.5"/><path d="M12 3v6"/><path d="M9 6l3 3 3-3"/></svg>',
   compare: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 21h14"/><path d="M3 7h18"/><path d="M6 7l-3 7a3 3 0 006 0z"/><path d="M18 7l-3 7a3 3 0 006 0z"/></svg>',
   learn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5c-.8 0-1.5-.7-1.5-1.5z"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5z"/></svg>',
   sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
@@ -53,6 +54,7 @@ const PAGES = [
   ['income.html', 'Income', 'income', 'Income'],
   ['portfolio.html', 'Live $10K', 'live', '$10K'],
   ['compare.html', 'Sell vs. income', 'compare', 'Compare'],
+  ['tracker.html', 'Tracker', 'tracker', 'Tracker'],
   ['learn.html', 'Learn', 'learn', 'Learn'],
 ];
 
@@ -78,7 +80,7 @@ export function mountLayout(active, { modeSwitch = true } = {}) {
 
   const tabbar = document.createElement('nav');
   tabbar.className = 'tabbar';
-  tabbar.innerHTML = PAGES.map(([h, , i, short]) => `<a href="${h}" class="${h === active ? 'active' : ''}">${ICONS[i]}${short}</a>`).join('');
+  tabbar.innerHTML = PAGES.filter(([h]) => h !== 'index.html').map(([h, , i, short]) => `<a href="${h}" class="${h === active ? 'active' : ''}">${ICONS[i]}${short}</a>`).join('');
   document.body.append(tabbar);
 
   const footer = document.createElement('footer');
@@ -290,7 +292,7 @@ export async function intraday(quotesUrl, range, symbols) {
     const r = await fetch(quotesUrl.replace(/\/quotes$/, '/chart') + `?range=${range}&symbols=${symbols.join(',')}`);
     if (!r.ok) return null;
     const { series } = await r.json();
-    const v = Object.fromEntries(Object.entries(series).map(([t, rows]) => [t, rows.map(([s, p]) => [s * 1000, p])]));
+    const v = Object.fromEntries(Object.entries(series).map(([t, rows]) => [t, rows.map(([s, p, vol]) => [s * 1000, p, vol || 0])]));
     intradayCache.set(key, { t: Date.now(), v });
     return v;
   } catch { return null; }
@@ -327,14 +329,14 @@ export function roller(el) {
     if (!reuse) {
       el.innerHTML = [...text].map((c) => /\d/.test(c)
         ? `<span class="d"><span>${'0123456789'.split('').map((n) => `<i>${n}</i>`).join('')}</span></span>`
-        : `<span class="s">${c}</span>`).join('');
+        : `<span class="s">${c === ' ' ? '&nbsp;' : c}</span>`).join('');
     }
     [...text].forEach((c, i) => {
       const node = el.children[i];
       if (/\d/.test(c)) {
         if (!node.classList.contains('d')) return;
         node.firstChild.style.transform = `translateY(-${+c * 1.2}em)`;
-      } else if (node.textContent !== c) node.textContent = c;
+      } else if (node.textContent !== (c === ' ' ? '\u00a0' : c)) node.textContent = c === ' ' ? '\u00a0' : c;
     });
     if (!reuse) {
       // first paint: jump straight to the digits, no roll

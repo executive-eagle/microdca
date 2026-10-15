@@ -7,13 +7,13 @@ const OUT = new URL('../public/data/prices.json', import.meta.url);
 // Every asset listed in assets.json gets fetched — add a fund there, not here.
 const cfg = JSON.parse(await readFile(new URL('../assets.json', import.meta.url), 'utf8'));
 const TICKERS = Object.fromEntries(
-  [cfg.bitcoin, ...cfg.income, ...(cfg.growth || [])].map((a) => [a.ticker, { yahoo: a.yahoo || a.ticker, from: a.history_from || '2024-01-01' }]),
+  [cfg.bitcoin, ...cfg.income, ...(cfg.growth || [])].map((a) => [a.ticker, { yahoo: a.yahoo || a.ticker, from: a.history_from || '2024-01-01', atm: !!a.atm }]),
 );
 
 const isoDate = (sec, offset) => new Date((sec + offset) * 1000).toISOString().slice(0, 10);
 const round = (v, dp) => Math.round(v * 10 ** dp) / 10 ** dp;
 
-async function fetchTicker({ yahoo, from }) {
+async function fetchTicker({ yahoo, from, atm }) {
   const p1 = Math.floor(new Date(from).getTime() / 1000);
   const p2 = Math.floor(Date.now() / 1000) + 86400;
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahoo)}?period1=${p1}&period2=${p2}&interval=1d&events=div`;
@@ -23,11 +23,14 @@ async function fetchTicker({ yahoo, from }) {
   const offset = r.meta.gmtoffset || 0;
   const closes = r.indicators.quote[0].close;
   const dp = yahoo === 'BTC-USD' ? 2 : 4;
+  const q = r.indicators.quote[0];
   const byDate = new Map();
   r.timestamp.forEach((t, i) => {
-    if (closes[i] != null) byDate.set(isoDate(t, offset), round(closes[i], dp));
+    if (closes[i] == null) return;
+    // ATM-tracked funds also keep volume and the day's high: [date, close, volume, high]
+    byDate.set(isoDate(t, offset), atm ? [round(closes[i], dp), q.volume[i] || 0, round(q.high[i] ?? closes[i], dp)] : round(closes[i], dp));
   });
-  const prices = [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const prices = [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([d, v]) => (Array.isArray(v) ? [d, ...v] : [d, v]));
   const dividends = Object.values(r.events?.dividends || {})
     .map((d) => [isoDate(d.date, offset), round(d.amount, 4)])
     .sort((a, b) => a[0].localeCompare(b[0]));

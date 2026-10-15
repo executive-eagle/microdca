@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- Source for public/og.png (the card X and other sites show when a MicroDCA link is shared).
+     Rebuild: npm run og -->
+<html>
+<head>
+<meta charset="utf-8" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,500;9..40,700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; background: #000; color: #fff; font-family: 'DM Sans', sans-serif; overflow: hidden; }
+  .wrap { position: relative; width: 100%; height: 100%; padding: 72px 80px; box-sizing: border-box; }
+  .brand { display: flex; align-items: center; gap: 16px; font-size: 40px; font-weight: 700; letter-spacing: -0.03em; }
+  .brand svg { width: 52px; height: 52px; }
+  h1 { font-size: 86px; line-height: 1.02; letter-spacing: -0.035em; margin: 58px 0 0; font-weight: 700; max-width: 760px; }
+  h1 em { font-style: normal; color: #F7931A; }
+  .sub { font-size: 28px; color: #a6a8ab; margin-top: 26px; font-weight: 500; }
+  .url { position: absolute; left: 80px; bottom: 60px; font-size: 24px; color: #6f7275; font-weight: 500; }
+  .chart { position: absolute; right: 36px; bottom: 0; width: 560px; height: 380px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="#F7931A"/><path d="M6.5 16.5l3.6-4.2 2.7 2.2 4.7-6" stroke="#000" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>MicroDCA</div>
+  <h1>Grow your money <em>a little at a time.</em></h1>
+  <div class="sub">Bitcoin DCA · Income funds · Live $10K portfolio</div>
+  <div class="url">executive-eagle.github.io/microdca</div>
+  <svg class="chart" viewBox="0 0 560 380" preserveAspectRatio="none">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#00C805" stop-opacity="0.28"/><stop offset="1" stop-color="#00C805" stop-opacity="0"/></linearGradient></defs>
+    <path d="M0 330 L40 318 L80 324 L120 300 L160 306 L200 270 L240 282 L280 236 L320 248 L360 196 L400 214 L440 150 L480 168 L520 104 L560 80 L560 380 L0 380 Z" fill="url(#g)"/>
+    <path d="M0 330 L40 318 L80 324 L120 300 L160 306 L200 270 L240 282 L280 236 L320 248 L360 196 L400 214 L440 150 L480 168 L520 104 L560 80" fill="none" stroke="#00C805" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M0 340 L560 250" stroke="#6f7275" stroke-width="2.5" stroke-dasharray="4 7"/>
+    <circle cx="560" cy="80" r="9" fill="#00C805"/>
+  </svg>
+</div>
+</body>
+</html>

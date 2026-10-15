@@ -7,6 +7,8 @@ Free, open-source bitcoin DCA and bitcoin-income simulator.
 - **Bitcoin DCA**: backtest buying bitcoin daily, weekly or monthly vs. a lump sum.
 - **Income**: DCA into STRC, SATA, STRF, STRK, STRD, BTCI (or any ticker a visitor adds), then split every payout between reinvesting, buying BTC/IBIT, paying down margin, bills and savings, with opportunity cost and per-timeframe results.
 - **Live $10K**: a hypothetical $10,000 portfolio started Oct 15, 2026 that reinvests dividends every day.
+- **Sell vs. income**: same starting money, sell bitcoin for bills vs. keep it and live off income (with taxes and borrowing).
+- **Tracker**: live estimate of the bitcoin Strategy (STRC) and Strive (SATA) buy through at-the-market preferred sales, with history since launch. Funds appear here when they have an `atm` block in `assets.json`.
 
 ## Add or change a fund
 
@@ -34,6 +36,10 @@ The worker runs on Cloudflare's Workers Free plan: if it ever exceeds 100,000 re
 ```bash
 cd worker && npx wrangler deploy
 ```
+
+## Share image
+
+`public/og.png` is the card shown when a link is shared on X and elsewhere. Edit `scripts/og.html` and run `npm run og` to re-render it (uses the Chrome installed on your Mac).
 
 ## Run locally
 

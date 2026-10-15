@@ -1,7 +1,7 @@
 // MicroDCA live quotes: fetches real-time prices from Yahoo Finance for the tickers the site lists,
 // caches them for 15s at Cloudflare's edge, and serves them with CORS so the static site can read them.
 // GET /quotes → { t, quotes: { STRC: { price, prevClose, time, date, state }, ... } }
-// GET /chart?range=1d|1mo&symbols=BTC,STRC → { t, range, series: { BTC: [[unixSec, close], ...] } }
+// GET /chart?range=1d|1mo&symbols=BTC,STRC → { t, range, series: { BTC: [[unixSec, close, volume], ...] } }
 //   1d = last 2 days of 5-minute bars (cached 60s), 1mo = last month of hourly bars (cached 15 min)
 // GET /history?symbol=MSTY → { symbol, name, type, prices: [[date, close]], dividends: [[date, amount]] }
 //   any ticker a visitor adds on the site; daily closes since 2010, cached 6 hours
@@ -71,7 +71,8 @@ async function chart(url, env, ctx, cors) {
       const d = (await res.json()).chart.result[0];
       const c = d.indicators.quote[0].close;
       const dp = t === 'BTC' ? 2 : 4;
-      return [t, (d.timestamp || []).map((ts, i) => (c[i] == null ? null : [ts, +c[i].toFixed(dp)])).filter(Boolean)];
+      const vol = d.indicators.quote[0].volume || [];
+      return [t, (d.timestamp || []).map((ts, i) => (c[i] == null ? null : [ts, +c[i].toFixed(dp), vol[i] || 0])).filter(Boolean)];
     } catch { return [t, null]; }
   }));
   const series = Object.fromEntries(entries.filter(([, v]) => v && v.length));
@@ -127,6 +128,8 @@ async function quote(symbol) {
   const off = m.gmtoffset || 0;
   return {
     price: m.regularMarketPrice,
+    volume: m.regularMarketVolume ?? null,
+    dayHigh: m.regularMarketDayHigh ?? null,
     prevClose: m.chartPreviousClose ?? m.previousClose ?? null,
     time: new Date(m.regularMarketTime * 1000).toISOString(),
     date: new Date((m.regularMarketTime + off) * 1000).toISOString().slice(0, 10),

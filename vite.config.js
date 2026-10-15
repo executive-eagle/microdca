@@ -13,6 +13,7 @@ export default defineConfig({
         portfolio: resolve(__dirname, 'portfolio.html'),
         learn: resolve(__dirname, 'learn.html'),
         compare: resolve(__dirname, 'compare.html'),
+        tracker: resolve(__dirname, 'tracker.html'),
       },
     },
   },

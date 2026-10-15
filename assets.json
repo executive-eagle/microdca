@@ -12,7 +12,8 @@
     "live_quotes_url: the free Cloudflare Worker (worker/ folder) that serves real-time prices for every ticker here. BTC is priced live in the browser.",
     "plain_name: the friendly name beginners see (e.g. 'Strategy Stretch'). risk: lower | medium | higher, with risk_note explaining why in one sentence. Risk is relative to the other funds on this site.",
     "simple_styles: the three choices Simple mode shows instead of sliders. mix works like income_presets.",
-    "roc_estimate: share of payouts expected to be return of capital (0 to 1), from the issuer's latest notices. tax_info_url / tax_info_label: where people can check the real numbers (19a-1 notices for funds, Form 8937 / 8-K filings for preferreds). Used only for the US tax estimates."
+    "roc_estimate: share of payouts expected to be return of capital (0 to 1), from the issuer's latest notices. tax_info_url / tax_info_label: where people can check the real numbers (19a-1 notices for funds, Form 8937 / 8-K filings for preferreds). Used only for the US tax estimates.",
+    "atm: makes a fund show up on the Tracker page (estimated bitcoin bought through at-the-market share sales). par = price at or above which the issuer can sell new shares. filings_url = where the issuer reports actual sales."
   ],
   "live_quotes_url": "https://microdca-quotes.microdca3.workers.dev/quotes",
   "bitcoin": {
@@ -39,7 +40,13 @@
       "history_from": "2025-01-01",
       "roc_estimate": 1.0,
       "tax_info_url": "https://www.strategy.com/press/strategys-distributions-to-digital-credit-investors-in-2025-are-return-of-capital_02-02-2026",
-      "tax_info_label": "Strategy's return-of-capital notice (Form 8937)"
+      "tax_info_label": "Strategy's return-of-capital notice (Form 8937)",
+      "atm": {
+        "par": 100,
+        "issuer": "Strategy",
+        "filings_url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001050446&type=8-K",
+        "filings_label": "Strategy 8-K filings (weekly ATM updates)"
+      }
     },
     {
       "ticker": "SATA",
@@ -55,7 +62,13 @@
       "history_from": "2025-11-01",
       "roc_estimate": 1.0,
       "tax_info_url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001920406&type=8-K",
-      "tax_info_label": "Strive's dividend filings (SEC 8-K)"
+      "tax_info_label": "Strive's dividend filings (SEC 8-K)",
+      "atm": {
+        "par": 100,
+        "issuer": "Strive",
+        "filings_url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001920406&type=8-K",
+        "filings_label": "Strive 8-K filings"
+      }
     },
     {
       "ticker": "STRF",
