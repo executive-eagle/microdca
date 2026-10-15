@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>MicroDCA · STRC &amp; SATA bitcoin tracker</title>
+  <title>MicroDCA · ATM Tracker</title>
   <meta name="description" content="Live estimate of how much bitcoin Strategy (STRC) and Strive (SATA) buy by selling preferred stock at the market, plus the history since launch." />
   <meta name="theme-color" content="#000000" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="MicroDCA" />
-  <meta property="og:title" content="MicroDCA · STRC &amp; SATA bitcoin tracker" />
+  <meta property="og:title" content="MicroDCA · ATM Tracker" />
   <meta property="og:description" content="Live estimate of how much bitcoin Strategy (STRC) and Strive (SATA) buy by selling preferred stock at the market, plus the history since launch." />
   <meta property="og:url" content="https://executive-eagle.github.io/microdca/tracker.html" />
   <meta property="og:image" content="https://executive-eagle.github.io/microdca/og.png" />
@@ -23,25 +23,52 @@
   <main>
     <div class="trk-head">
       <span class="live" id="badge">Live</span>
-      <h1 class="title">Preferreds → bitcoin</h1>
+      <h1 class="title">ATM Tracker</h1>
+      <div class="trk-kicker">STRC &amp; SATA → bitcoin</div>
       <p class="sentence">Strategy and Strive sell new STRC and SATA shares "at the market" when they trade at or above $100, and use the cash to buy bitcoin. Here's a live estimate.</p>
     </div>
 
-    <section class="trk-hero">
-      <div class="trk-total">
-        <div class="k" id="total-lbl">Estimated bitcoin bought since launch</div>
-        <div class="big" id="big"></div>
-        <div class="change" id="change">&nbsp;</div>
-        <div class="trk-tiles" id="tiles"></div>
+    <div class="trk-tiles" id="tiles"></div>
+
+    <section class="jar-card">
+      <div class="jar-head">
+        <span class="live" id="jar-badge">Live</span>
+        <h2>Today's accumulation</h2>
+        <span class="muted" id="jar-date"></span>
+        <button class="icon-btn sound" id="sound" aria-label="Turn coin sounds on" title="Coin sounds"></button>
       </div>
-      <div class="trk-stack">
-        <canvas id="stack" aria-label="Coins stacking up as each preferred's sales buy bitcoin"></canvas>
-        <div class="stack-foot"><span id="stack-unit"></span><button class="act" id="replay">Replay</button></div>
+      <div class="jar">
+        <canvas id="jar" aria-label="Coins piling up as STRC and SATA sales buy bitcoin today"></canvas>
+        <div class="jar-readout">
+          <div class="jar-big" id="today-big"></div>
+          <div class="jar-sub" id="today-sub">Estimated bitcoin bought today</div>
+          <div class="jar-split" id="today-split"></div>
+        </div>
       </div>
+      <div class="jar-foot"><span id="jar-unit"></span><button class="act" id="preview">Preview the animation</button></div>
+    </section>
+
+    <section class="block">
+      <h2>Bitcoin per minute</h2>
+      <p class="sentence" id="pm-note"></p>
+      <div class="chart-wrap pm"><canvas id="perminute" aria-label="Estimated bitcoin bought each minute today, with bitcoin's price"></canvas></div>
+      <div class="legend" id="pm-legend"></div>
+      <p class="tl" id="pm-tl">&nbsp;</p>
     </section>
 
     <section class="block">
       <h2>Since launch</h2>
+      <div class="trk-hero">
+        <div class="trk-total">
+          <div class="k" id="total-lbl">Estimated bitcoin bought since launch</div>
+          <div class="big" id="big"></div>
+          <div class="change" id="change">&nbsp;</div>
+        </div>
+        <div class="trk-stack">
+          <canvas id="stack" aria-label="Coins stacking up as each preferred's sales buy bitcoin"></canvas>
+          <div class="stack-foot"><span id="stack-unit"></span><button class="act" id="replay">Replay</button></div>
+        </div>
+      </div>
       <div class="big sm" id="hist-big"></div>
       <div class="change" id="hist-change">&nbsp;</div>
       <div class="chart-wrap"><canvas id="hist" aria-label="Cumulative estimated bitcoin bought by STRC and SATA"></canvas></div>
@@ -64,7 +91,7 @@
     <section class="block about">
       <h2>How the estimate works</h2>
       <p><b>At-the-market (ATM) sales</b> let a company sell new shares a little at a time on the open market. Strategy and Strive only sell these preferreds at or above their $100 par value, and they've said the money goes mainly to buying bitcoin.</p>
-      <p><b>The estimate:</b> shares traded at or above $100 (5-minute data today, daily data before) × the share the company is assumed to sell × the price ÷ bitcoin's price at the time. On days a fund only touched $100 without closing there, half its volume counts.</p>
+      <p><b>The estimate:</b> shares traded at or above $100 (minute-by-minute today, including pre- and after-hours; daily data before) × the share the company is assumed to sell × the price ÷ bitcoin's price at the time. On days a fund only touched $100 without closing there, half its volume counts.</p>
       <p><b>The assumption:</b> MicroDCA assumes the company sold about <b id="part-word">45%</b> of at-or-above-par volume. That roughly matches STRC growing to about $8.5 billion by spring 2026, about $6 billion beyond its first offering. <span class="adv">Change it below to see a range.</span></p>
       <div class="prow adv tracker-part"><label for="part">Share of at-par volume sold by the company</label><div class="ctl pct-in"><input class="field" id="part" type="number" inputmode="decimal" min="1" max="100" step="5" value="45" /></div></div>
       <p><b>The real numbers</b> come in the companies' SEC filings (Strategy files weekly 8-Ks with its ATM sales and bitcoin purchases): <span id="filings"></span>. Estimates ignore offering fees, cash the companies keep for dividends, and initial offerings.</p>

@@ -2,13 +2,14 @@
 // caches them for 15s at Cloudflare's edge, and serves them with CORS so the static site can read them.
 // GET /quotes → { t, quotes: { STRC: { price, prevClose, time, date, state }, ... } }
 // GET /chart?range=1d|1mo&symbols=BTC,STRC → { t, range, series: { BTC: [[unixSec, close, volume], ...] } }
-//   1d = last 2 days of 5-minute bars (cached 60s), 1mo = last month of hourly bars (cached 15 min)
+//   1d = last 2 days of 5-minute bars (cached 60s), 1mo = last month of hourly bars (cached 15 min),
+//   today = latest session's 1-minute bars incl. pre/after hours (cached 30s)
 // GET /history?symbol=MSTY → { symbol, name, type, prices: [[date, close]], dividends: [[date, amount]] }
 //   any ticker a visitor adds on the site; daily closes since 2010, cached 6 hours
 
 const QUOTE_TTL = 15; // seconds
 const TICKER_TTL = 600;
-const CHART = { '1d': { range: '2d', interval: '5m', ttl: 60 }, '1mo': { range: '1mo', interval: '1h', ttl: 900 } };
+const CHART = { '1d': { range: '2d', interval: '5m', ttl: 60 }, '1mo': { range: '1mo', interval: '1h', ttl: 900 }, today: { range: '1d', interval: '1m', ttl: 30, prepost: true } };
 const FALLBACK_TICKERS = { BTC: 'BTC-USD', STRC: 'STRC', STRF: 'STRF', STRK: 'STRK', STRD: 'STRD', BTCI: 'BTCI', IBIT: 'IBIT', MSTR: 'MSTR' };
 
 export default {
@@ -57,7 +58,7 @@ async function loadTickers(env, ctx) {
 async function chart(url, env, ctx, cors) {
   const r = url.searchParams.get('range') || '1d';
   const cfg = CHART[r];
-  if (!cfg) return json({ error: 'range must be 1d or 1mo' }, cors, 60);
+  if (!cfg) return json({ error: 'range must be 1d, 1mo or today' }, cors, 60);
   const all = await loadTickers(env, ctx);
   const want = (url.searchParams.get('symbols') || Object.keys(all).join(',')).split(',').map((s) => s.trim().toUpperCase()).filter((t) => all[t]).sort();
   const cache = caches.default;
@@ -66,7 +67,7 @@ async function chart(url, env, ctx, cors) {
   if (hit) return withCors(hit, cors);
   const entries = await Promise.all(want.map(async (t) => {
     try {
-      const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(all[t])}?range=${cfg.range}&interval=${cfg.interval}`, { headers: { 'User-Agent': 'Mozilla/5.0 (MicroDCA charts)' } });
+      const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(all[t])}?range=${cfg.range}&interval=${cfg.interval}${cfg.prepost ? '&includePrePost=true' : ''}`, { headers: { 'User-Agent': 'Mozilla/5.0 (MicroDCA charts)' } });
       if (!res.ok) return [t, null];
       const d = (await res.json()).chart.result[0];
       const c = d.indicators.quote[0].close;

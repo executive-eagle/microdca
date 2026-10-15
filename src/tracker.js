@@ -30,28 +30,198 @@ function history(t) {
   return out;
 }
 
-/** Today: 5-minute bars at or above par, plus any volume since the last bar if it's trading at par right now. */
+/** US Eastern offset in minutes for a timestamp (handles daylight saving). */
+function etOffsetMin(ms) {
+  const part = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', timeZoneName: 'shortOffset' }).formatToParts(new Date(ms)).find((p) => p.type === 'timeZoneName')?.value || 'GMT-5';
+  const m = part.match(/GMT([+-]\d+)(?::(\d+))?/);
+  return m ? +m[1] * 60 + Math.sign(+m[1]) * (+m[2] || 0) : -300;
+}
+const etDate = (ms) => new Date(ms + etOffsetMin(ms) * 60000).toISOString().slice(0, 10);
+/** The trading session shown: the ET date of the latest STRC/SATA minute bar (or today). */
+function sessionInfo() {
+  const lastBar = Math.max(0, ...T.map((t) => bars?.[t]?.at(-1)?.[0] || 0));
+  const date = lastBar ? etDate(lastBar) : etDate(Date.now());
+  const off = etOffsetMin(Date.parse(date + 'T12:00:00Z'));
+  const start = Date.parse(date + 'T04:00:00Z') - off * 60000; // 4:00 AM ET
+  return { date, start, end: start + 16 * 3600000 }; // through 8:00 PM ET
+}
+
+/**
+ * Today, minute by minute: volume in minutes that traded at or above par × participation × price ÷ bitcoin price that minute.
+ * Plus a live tail from the quote's running volume since the last minute bar.
+ */
 function todayEstimate(t) {
   const par = A[t].atm.par, q = quotes?.quotes?.[t];
-  const day = todayISO();
-  const list = (bars?.[t] || []).filter(([ms]) => new Date(ms).toISOString().slice(0, 10) === day);
+  const sess = sessionInfo();
+  const list = (bars?.[t] || []).filter(([ms]) => ms >= sess.start && ms < sess.end);
   const btcBars = bars?.BTC || [];
   let j = 0;
-  const btcAt = (ms) => { while (j + 1 < btcBars.length && btcBars[j + 1][0] <= ms) j++; return btcBars[j]?.[1] || liveBtc || btcDaily(day); };
+  const btcAt = (ms) => { while (j + 1 < btcBars.length && btcBars[j + 1][0] <= ms) j++; return btcBars[j]?.[1] || liveBtc || btcDaily(sess.date); };
+  const minutes = new Map();
   let vol = 0, elig = 0, raised = 0, btc = 0;
   for (const [ms, close, v] of list) {
     vol += v;
-    if (close >= par) { elig += v; const r = v * close * part; raised += r; btc += r / btcAt(ms); }
+    if (close >= par && v > 0) {
+      elig += v;
+      const r = v * close * part, b = r / btcAt(ms);
+      raised += r; btc += b;
+      minutes.set(Math.floor((ms - sess.start) / 60000), b);
+    }
   }
-  // live tail: volume reported since the last 5-minute bar
-  if (q && q.date === day && q.volume > vol) {
+  // live tail: quote volume reported since the last minute bar
+  if (q && q.date === sess.date && q.volume > vol && (q.state === 'live' || q.state === 'pre' || q.state === 'post')) {
     const extra = q.volume - vol;
     vol = q.volume;
-    if (q.price >= par) { elig += extra; const r = extra * q.price * part; raised += r; btc += r / (liveBtc || btcAt(Date.now())); }
+    if (q.price >= par) {
+      elig += extra;
+      const r = extra * q.price * part, b = r / (liveBtc || btcAt(Date.now()));
+      raised += r; btc += b;
+      const slot = Math.floor((Date.now() - sess.start) / 60000);
+      minutes.set(slot, (minutes.get(slot) || 0) + b);
+    }
   }
   const price = q?.price ?? data.series[t].prices.at(-1)[1];
-  return { price, vol, elig, raised, btc, state: q?.state || 'closed', atPar: price >= par };
+  return { price, vol, elig, raised, btc, minutes, state: q?.state || 'closed', atPar: price >= par };
 }
+
+/* ================= today's jar: coins pile up as the ATM buys ================= */
+const sound = (() => {
+  const KEY = 'microdca-coin-sound';
+  let on = false, ac = null, last = 0;
+  try { on = localStorage.getItem(KEY) === '1'; } catch {}
+  const ICON_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 010 7"/><path d="M19 6a8.5 8.5 0 010 12"/></svg>';
+  const ICON_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l5 6"/><path d="M22 9l-5 6"/></svg>';
+  const btn = document.getElementById('sound');
+  const sync = () => { btn.innerHTML = on ? ICON_ON : ICON_OFF; btn.setAttribute('aria-label', on ? 'Turn coin sounds off' : 'Turn coin sounds on'); btn.classList.toggle('on', on); };
+  btn.onclick = () => { on = !on; try { localStorage.setItem(KEY, on ? '1' : '0'); } catch {} if (on) { ac ??= new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); clink(); } sync(); };
+  sync();
+  /** A short, quiet two-tone "clink". */
+  function clink() {
+    if (!on || !ac) return;
+    const now = ac.currentTime;
+    if (now - last < 0.07) return;
+    last = now;
+    for (const [f, g] of [[2093, 0.05], [3136, 0.03]]) {
+      const o = ac.createOscillator(), v = ac.createGain();
+      o.type = 'sine'; o.frequency.value = f * (0.97 + Math.random() * 0.06);
+      v.gain.setValueAtTime(g, now); v.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+      o.connect(v).connect(ac.destination); o.start(now); o.stop(now + 0.17);
+    }
+  }
+  return { clink };
+})();
+
+const jar = (() => {
+  const cv = $('jar'), ctx = cv.getContext('2d');
+  const CW = 30, CH = 10, TH = 4; // coin width, face height, thickness
+  let W = 0, H = 0, unit = 5, cols = [], coins = [], falling = [], pops = [], raf = null;
+  function resize() {
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    W = cv.clientWidth; H = cv.clientHeight;
+    cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    rebuild();
+  }
+  const ncols = () => Math.max(8, Math.floor((W - 24) / (CW * 0.5)));
+  const colX = (i) => 12 + CW / 2 + i * ((W - 24 - CW) / (ncols() - 1));
+  const capacity = () => Math.floor(ncols() * ((H * 0.42) / TH) * 0.5); // a mound, not a full box
+  /** Where a coin dropped at column i comes to rest: it slides downhill like sand. */
+  function settle(i) {
+    for (let step = 0; step < 40; step++) {
+      const h = cols[i], l = i > 0 ? cols[i - 1] : Infinity, r = i < cols.length - 1 ? cols[i + 1] : Infinity;
+      if (l < h - 1 && l <= r) i--; else if (r < h - 1) i++; else break;
+    }
+    return i;
+  }
+  function place(t, animate, delay = 0) {
+    if (!cols.length) cols = new Array(ncols()).fill(0);
+    // drop near the middle, spreading out as the pile grows
+    const spread = Math.min(0.95, 0.12 + (coins.length + falling.length) / 500);
+    let i = Math.round((cols.length - 1) / 2 + (Math.random() - 0.5) * spread * (cols.length - 1));
+    i = settle(Math.max(0, Math.min(cols.length - 1, i)));
+    const y = H - 10 - cols[i] * TH - CH / 2;
+    cols[i]++;
+    const c = { t, x: colX(i) + (Math.random() - 0.5) * 4, y };
+    if (animate && !reduceMotion) falling.push({ ...c, y0: -12, t0: performance.now() + delay, ms: 520 + Math.random() * 220 });
+    else coins.push(c);
+    kick();
+  }
+  function coin(x, y, color, a = 1) {
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.fillStyle = '#9A5605';
+    ctx.beginPath(); ctx.ellipse(x, y + TH, CW / 2, CH / 2, 0, 0, Math.PI); ctx.lineTo(x - CW / 2, y); ctx.ellipse(x, y, CW / 2, CH / 2, 0, Math.PI, 0, true); ctx.closePath(); ctx.fill();
+    const g = ctx.createLinearGradient(x - CW / 2, 0, x + CW / 2, 0);
+    g.addColorStop(0, '#FFB955'); g.addColorStop(0.55, '#F7931A'); g.addColorStop(1, '#D5760A');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y, CW / 2, CH / 2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = color; ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.restore();
+  }
+  function frame(now) {
+    ctx.clearRect(0, 0, W, H);
+    // the glow rises with the pile
+    const top = cols.length ? Math.max(...cols) * TH : 0;
+    if (top > 0) {
+      const y = H - 10 - top - 14;
+      const g = ctx.createLinearGradient(0, y, 0, H);
+      g.addColorStop(0, 'rgba(247,147,26,0)'); g.addColorStop(1, 'rgba(247,147,26,0.16)');
+      ctx.fillStyle = g; ctx.fillRect(0, y, W, H - y);
+    }
+    ctx.strokeStyle = 'rgba(247,147,26,0.25)'; ctx.setLineDash([4, 5]); ctx.beginPath(); ctx.moveTo(0, H - 9.5); ctx.lineTo(W, H - 9.5); ctx.stroke(); ctx.setLineDash([]);
+    coins.sort((a, b) => a.y - b.y);
+    for (const c of coins) coin(c.x, c.y, A[c.t].color);
+    let busy = false;
+    falling = falling.filter((f) => {
+      if (now < f.t0) { busy = true; return true; }
+      const k = Math.min(1, (now - f.t0) / f.ms), e = k * k;
+      coin(f.x, f.y0 + (f.y - f.y0) * e, A[f.t].color);
+      if (k >= 1) { coins.push({ t: f.t, x: f.x, y: f.y }); sound.clink(); busy = true; return false; }
+      busy = true; return true;
+    });
+    pops = pops.filter((p) => {
+      const k = (now - p.t0) / 1800;
+      if (k < 0) { busy = true; return true; }
+      if (k >= 1) return false;
+      ctx.save(); ctx.globalAlpha = Math.min(1, (1 - k) * 1.6); ctx.fillStyle = A[p.t].color; ctx.font = '700 15px DM Sans, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(p.text, p.x, p.y - k * 22); ctx.restore();
+      busy = true; return true;
+    });
+    raf = busy ? requestAnimationFrame(frame) : null;
+  }
+  const kick = () => { if (!raf) raf = requestAnimationFrame(frame); };
+  let counts = {};
+  function rebuild(animate = false) {
+    cols = new Array(ncols()).fill(0); coins = []; falling = [];
+    const seq = [];
+    for (const t of T) for (let i = 0; i < (counts[t] || 0); i++) seq.push(t);
+    seq.sort(() => Math.random() - 0.5);
+    seq.forEach((t, i) => place(t, animate, i * Math.min(60, 2000 / (seq.length || 1))));
+    kick();
+  }
+  addEventListener('resize', resize);
+  return {
+    init() { resize(); },
+    /** Show `btcByFund` worth of coins (re-scaling the coin size if the pile would overflow). */
+    set(btcByFund, { animate = false } = {}) {
+      const total = Object.values(btcByFund).reduce((a, b) => a + b, 0);
+      while (total / unit > capacity()) unit *= 2;
+      counts = Object.fromEntries(T.map((t) => [t, Math.floor((btcByFund[t] || 0) / unit)]));
+      rebuild(animate);
+      $('jar-unit').textContent = `Each coin ≈ ${num(unit, unit < 1 ? 2 : 0)} BTC`;
+    },
+    setUnit(u) { unit = u; },
+    /** New bitcoin bought by `t`: add coins (if a full coin's worth) and pop a "+x BTC" label. */
+    add(t, btc, prevBtc) {
+      const before = Math.floor(prevBtc / unit), after = Math.floor((prevBtc + btc) / unit);
+      for (let i = 0; i < after - before; i++) { counts[t] = (counts[t] || 0) + 1; place(t, true, i * 90); }
+      // the "+x BTC" pops rise from just above the pile, below the big number
+      const pileTop = H - 10 - Math.max(0, ...cols) * TH;
+      const x = W * (0.2 + Math.random() * 0.6);
+      if (pops.length >= 3) pops.shift(); // at most three labels at once
+      pops.push({ t, x, y: Math.max(H * 0.64, pileTop - 18) + (Math.random() - 0.5) * 24, text: `+${num(btc, btc < 1 ? 3 : 2)} BTC ${t}`, t0: performance.now() + 200 });
+      kick();
+    },
+    get unit() { return unit; },
+  };
+})();
 
 /* ================= coin stack (canvas) ================= */
 const stack = (() => {
@@ -156,6 +326,83 @@ const stack = (() => {
     },
   };
 })();
+
+/* ================= today: readout + per-minute chart ================= */
+const todayBig = roller($('today-big'));
+let preview = null; // when running, the readout shows preview numbers instead of real ones
+
+function renderTodayReadout() {
+  if (preview) return;
+  const sum = T.reduce((a, t) => a + today[t].btc, 0);
+  const raised = T.reduce((a, t) => a + today[t].raised, 0);
+  todayBig(`+${num(sum, sum >= 100 ? 2 : 4)} BTC`);
+  $('today-sub').textContent = 'Estimated bitcoin bought today';
+  $('today-split').innerHTML = T.map((t) => `<span><i class="dot" style="background:${A[t].color}"></i>${t} ${num(today[t].btc, today[t].btc >= 100 ? 1 : 3)}</span>`).join('') + `<span class="muted">≈ ${compactUsd(raised * 1)} raised</span>`;
+  const sess = sessionInfo();
+  $('jar-date').textContent = prettyDate(sess.date);
+  const live = T.some((t) => today[t].state === 'live' || today[t].state === 'pre' || today[t].state === 'post');
+  const open = T.some((t) => today[t].atPar && live);
+  $('jar-badge').textContent = open ? 'ATM open' : live ? 'Below par' : 'Market closed';
+  $('jar-badge').classList.toggle('closed', !open);
+  $('preview').hidden = open;
+}
+
+let pmChart;
+/** Shades the part of the trading day that hasn't happened yet. */
+const restOfDay = {
+  id: 'restOfDay',
+  beforeDatasetsDraw(chart) {
+    const nowSlot = chart.$nowSlot;
+    if (nowSlot == null || nowSlot >= chart.data.labels.length) return;
+    const x0 = chart.scales.x.getPixelForValue(Math.max(0, nowSlot)), { top, bottom, right } = chart.chartArea;
+    chart.ctx.save(); chart.ctx.fillStyle = rgba(css('--fg'), 0.04); chart.ctx.fillRect(x0, top, right - x0, bottom - top); chart.ctx.restore();
+  },
+};
+function drawPerMinute() {
+  const sess = sessionInfo();
+  const N = 960, labels = Array.from({ length: N }, (_, i) => sess.start + i * 60000);
+  const fmt = (ms) => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+  const per = Object.fromEntries(T.map((t) => [t, labels.map((_, i) => today[t].minutes.get(i) || 0)]));
+  const btcBars = bars?.BTC || [];
+  let j = 0;
+  const btcLine = labels.map((ms) => { if (ms > Date.now()) return null; while (j + 1 < btcBars.length && btcBars[j + 1][0] <= ms) j++; return btcBars[j] && btcBars[j][0] <= ms + 60000 ? btcBars[j][1] : null; });
+  const nowSlot = Math.floor((Date.now() - sess.start) / 60000);
+  const any = T.some((t) => today[t].btc > 0);
+  $('pm-note').textContent = any
+    ? 'Each bar is one minute of estimated buying. Taller bar, more bitcoin. The line is bitcoin\'s price (right side). The shaded area is the rest of today\'s trading hours.'
+    : `Neither has traded at or above $100 ${sess.date === etDate(Date.now()) ? 'yet today' : `on ${prettyDate(sess.date)}`}, so there's nothing to estimate${sess.date === etDate(Date.now()) ? ' so far' : ''}. Bars appear here the moment one does. The line is bitcoin's price.`;
+  $('pm-legend').innerHTML = T.map((t) => `<span><i class="sw" style="background:${A[t].color}"></i>${t} bitcoin bought</span>`).join('') + `<span><i class="sw dash" style="border-color:${css('--fg-2')}"></i>Bitcoin price</span>`;
+  const maxBar = Math.max(0.0001, ...labels.map((_, i) => T.reduce((a, t) => a + per[t][i], 0)));
+  pmChart?.destroy();
+  pmChart = new Chart($('perminute'), {
+    data: {
+      labels,
+      datasets: [
+        ...T.map((t) => ({ type: 'bar', label: t, data: per[t], backgroundColor: A[t].color, stack: 's', yAxisID: 'y', barPercentage: 1, categoryPercentage: 1, order: 2 })),
+        { type: 'line', label: 'BTC', data: btcLine, borderColor: css('--fg-2'), borderWidth: 1.25, pointRadius: 0, tension: 0, yAxisID: 'y2', order: 1, spanGaps: true },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: {
+        x: { grid: { display: false }, border: { display: false }, ticks: { color: css('--muted'), autoSkip: false, maxRotation: 0, font: { family: css('--font'), size: 11 }, callback: (_, i) => (i % 120 === 0 ? fmt(labels[i]).replace(':00', '') : '') } },
+        y: { stacked: true, beginAtZero: true, suggestedMax: maxBar * 1.15, position: 'left', grid: { color: css('--grid') }, border: { display: false }, ticks: { color: css('--muted'), maxTicksLimit: 4, font: { family: css('--font'), size: 11 }, callback: (v) => `${num(v, v < 1 ? 2 : 0)} ₿` } },
+        y2: { position: 'right', grid: { display: false }, border: { display: false }, ticks: { color: css('--muted'), maxTicksLimit: 4, font: { family: css('--font'), size: 11 }, callback: (v) => compactUsd(v) } },
+      },
+      onHover: (_e, els) => {
+        if (!els.length) { $('pm-tl').innerHTML = '&nbsp;'; return; }
+        const i = els[0].index;
+        $('pm-tl').innerHTML = `<b>${fmt(labels[i])} ET</b> · ${T.map((t) => `${t} ${num(per[t][i], 3)} BTC`).join(' · ')}${btcLine[i] ? ` · bitcoin ${usd0(btcLine[i])}` : ''}`;
+      },
+    },
+    plugins: [restOfDay],
+  });
+  pmChart.$nowSlot = nowSlot;
+  pmChart.update('none');
+  $('perminute').onmouseleave = () => { $('pm-tl').innerHTML = '&nbsp;'; };
+}
 
 /* ================= rendering ================= */
 const totals = () => {
@@ -309,12 +556,14 @@ function recompute(fromPoll = false) {
   for (const t of T) today[t] = todayEstimate(t);
   renderHead();
   renderToday();
-  if (fromPoll) {
-    // coins hit the stack when new ATM-eligible volume shows up
+  renderTodayReadout();
+  if (fromPoll && !preview) {
+    // new at-par volume → coins fall into today's jar (and sparkle on the since-launch heap)
     for (const t of T) {
       const prev = lastToday[t]?.btc ?? today[t].btc, d = today[t].btc - prev;
-      if (d > 0.005) stack.sparkle(t, `+${num(d, 2)} BTC`);
+      if (d > 0.0005) { jar.add(t, d, prev); stack.sparkle(t, `+${num(d, 2)} BTC`); }
     }
+    drawPerMinute();
   }
   lastToday = Object.fromEntries(T.map((t) => [t, { ...today[t] }]));
 }
@@ -325,11 +574,19 @@ function recompute(fromPoll = false) {
     A = incomeAssets(data);
     T = Object.keys(A).filter((t) => A[t].atm);
     btcDaily = priceLookup(data.series.BTC.prices);
-    const [p, q, b] = await Promise.all([liveBTC(), liveQuotes(LIVE_QUOTES_URL), intraday(LIVE_QUOTES_URL, '1d', [...T, 'BTC'])]);
+    const [p, q, b] = await Promise.all([liveBTC(), liveQuotes(LIVE_QUOTES_URL), intraday(LIVE_QUOTES_URL, 'today', [...T, 'BTC'])]);
     liveBtc = p; quotes = q; bars = b;
     for (const t of T) hist[t] = history(t);
     stack.init();
+    jar.init();
     recompute();
+    // a typical ATM day sets the coin size, so a normal day fills the jar nicely
+    const activeDays = T.flatMap((t) => hist[t].filter((r) => r.btc > 0)).length || 1;
+    const avgDay = T.reduce((a, t) => a + hist[t].reduce((x, r) => x + r.btc, 0), 0) / activeDays;
+    jar.setUnit(niceUnit(avgDay * 0.3)); // ≈ 200 coins on a typical ATM day
+    jar.set(Object.fromEntries(T.map((t) => [t, today[t].btc])), { animate: true });
+    drawPerMinute();
+    $('preview').onclick = runPreview;
     drawHistory();
     drawDaily();
     replay();
@@ -349,7 +606,7 @@ function recompute(fromPoll = false) {
     const poll = async () => {
       clearTimeout(timer);
       if (document.hidden) return;
-      const [p2, q2, b2] = await Promise.all([liveBTC(), liveQuotes(LIVE_QUOTES_URL), intraday(LIVE_QUOTES_URL, '1d', [...T, 'BTC'])]);
+      const [p2, q2, b2] = await Promise.all([liveBTC(), liveQuotes(LIVE_QUOTES_URL), intraday(LIVE_QUOTES_URL, 'today', [...T, 'BTC'])]);
       if (p2) liveBtc = p2; if (q2) quotes = q2; if (b2) bars = b2;
       recompute(true);
       timer = setTimeout(poll, quotes?.open && quotes.open !== 'closed' ? 15_000 : 60_000);
@@ -361,4 +618,31 @@ function recompute(fromPoll = false) {
     console.error(err);
   }
 })();
-onTheme(() => { if (data) { drawHistory(); drawDaily(); stack.fill({}); replay(); } });
+onTheme(() => { if (data) { drawHistory(); drawDaily(); drawPerMinute(); stack.fill({}); replay(); } });
+
+/* ================= preview: what an open ATM looks like ================= */
+function runPreview() {
+  if (preview) return;
+  const fake = Object.fromEntries(T.map((t) => [t, 0]));
+  preview = { t0: performance.now() };
+  $('preview').disabled = true;
+  $('today-sub').innerHTML = '<b class="o">Preview</b> · made-up numbers, not real data';
+  jar.set(fake);
+  const step = () => {
+    const el = performance.now() - preview.t0;
+    if (el > 16000) {
+      preview = null; $('preview').disabled = false;
+      jar.set(Object.fromEntries(T.map((t) => [t, today[t].btc])));
+      renderTodayReadout();
+      return;
+    }
+    const t = Math.random() < 0.7 ? T[0] : T[1] || T[0];
+    const d = jar.unit * (0.4 + Math.random() * 2.2);
+    jar.add(t, d, fake[t]); fake[t] += d;
+    const sum = Object.values(fake).reduce((a, b) => a + b, 0);
+    todayBig(`+${num(sum, sum >= 100 ? 2 : 4)} BTC`);
+    $('today-split').innerHTML = T.map((x) => `<span><i class="dot" style="background:${A[x].color}"></i>${x} ${num(fake[x], 1)}</span>`).join('');
+    setTimeout(step, 260 + Math.random() * 420);
+  };
+  step();
+}

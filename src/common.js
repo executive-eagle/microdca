@@ -54,7 +54,7 @@ const PAGES = [
   ['income.html', 'Income', 'income', 'Income'],
   ['portfolio.html', 'Live $10K', 'live', '$10K'],
   ['compare.html', 'Sell vs. income', 'compare', 'Compare'],
-  ['tracker.html', 'Tracker', 'tracker', 'Tracker'],
+  ['tracker.html', 'ATM Tracker', 'tracker', 'ATM'],
   ['learn.html', 'Learn', 'learn', 'Learn'],
 ];
 
