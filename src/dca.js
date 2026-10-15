@@ -141,7 +141,7 @@ function renderTax(r) {
   ].join('');
   $('tax-summary').innerHTML = net <= 0
     ? `Selling today would be a loss, so no tax. A loss can even lower taxes on other gains.`
-    : `Selling everything today would cost about <b>${usd0(tax)}</b> in tax at your ${R.bracket}% bracket${R.state ? ` + ${R.state}% state` : ''}. ` +
+    : `Selling everything today would cost about <b>${usd0(tax)}</b> in tax at your ${R.label}. ` +
       `<b>Not selling costs nothing</b>: holding bitcoin, or borrowing against it, isn't a taxable sale. That's one reason people use income to cover expenses instead of selling. <a class="o" href="learn.html#never-sell">How that works</a>`;
   $('tax-note').innerHTML = `${US_NOTE} Ignores fees and the 3.8% net investment income tax for high earners. <a href="learn.html#taxes">How taxes work here</a>`;
 }

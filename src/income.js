@@ -265,7 +265,7 @@ function renderTax(r) {
   const saved = ifOrdinary - taxNow;
   $('tax-summary').innerHTML = r.totalDiv < 0.01 ? 'No payouts yet, so nothing to tax.' :
     `Of the <b>${usd0(r.totalDiv)}</b> paid to you, about <b>${usd0(roc)}</b> counts as return of capital, so you'd owe roughly <b>${usd0(taxNow)}</b> now instead of <b>${usd0(ifOrdinary)}</b> if it were all regular income ` +
-    `(${usd0(saved)} less, at your ${R.bracket}% bracket${R.state ? ` + ${R.state}% state` : ''}). ` +
+    `(${usd0(saved)} less, at your ${R.label}). ` +
     (x.rocDeferred > 0.5 ? `That isn't tax-free: your cost basis is <b>${usd0(x.rocDeferred)}</b> lower, so it's taxed as a capital gain when you eventually sell. Hold and never sell, and it keeps waiting.` : '');
   const used = TICKERS.filter((t) => r.paidBy[t] > 0);
   const links = used.filter((t) => A[t].tax_info_url).map((t) => `<a href="${A[t].tax_info_url}" target="_blank" rel="noopener">${t}</a>`);
