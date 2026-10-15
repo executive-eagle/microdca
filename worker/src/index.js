@@ -3,6 +3,8 @@
 // GET /quotes → { t, quotes: { STRC: { price, prevClose, time, date, state }, ... } }
 // GET /chart?range=1d|1mo&symbols=BTC,STRC → { t, range, series: { BTC: [[unixSec, close], ...] } }
 //   1d = last 2 days of 5-minute bars (cached 60s), 1mo = last month of hourly bars (cached 15 min)
+// GET /history?symbol=MSTY → { symbol, name, type, prices: [[date, close]], dividends: [[date, amount]] }
+//   any ticker a visitor adds on the site; daily closes since 2010, cached 6 hours
 
 const QUOTE_TTL = 15; // seconds
 const TICKER_TTL = 600;
@@ -15,6 +17,7 @@ export default {
     const cors = corsHeaders(request, env);
     if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
     if (url.pathname === '/chart') return chart(url, env, ctx, cors);
+    if (url.pathname === '/history') return history(url, ctx, cors);
     if (url.pathname !== '/quotes') return json({ ok: true, endpoints: ['/quotes', '/chart'] }, cors, 60);
 
     const cache = caches.default;
@@ -74,6 +77,40 @@ async function chart(url, env, ctx, cors) {
   const series = Object.fromEntries(entries.filter(([, v]) => v && v.length));
   const res = json({ t: new Date().toISOString(), range: r, series }, {}, cfg.ttl);
   if (Object.keys(series).length) ctx.waitUntil(cache.put(key, res.clone()));
+  return withCors(res, cors);
+}
+
+const HISTORY_TTL = 6 * 3600;
+async function history(url, ctx, cors) {
+  const symbol = (url.searchParams.get('symbol') || '').trim().toUpperCase();
+  if (!/^[A-Z0-9][A-Z0-9.\-^=]{0,11}$/.test(symbol)) return json({ error: 'Enter a ticker like MSTY or SCHD.' }, cors, 60);
+  const cache = caches.default;
+  const key = new Request(`${url.origin}/history?symbol=${symbol}`);
+  const hit = await cache.match(key);
+  if (hit) return withCors(hit, cors);
+  const p2 = Math.floor(Date.now() / 1000) + 86400;
+  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=1262304000&period2=${p2}&interval=1d&events=div`, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (MicroDCA history)' },
+  });
+  if (r.status === 404) return json({ error: `Couldn't find ${symbol}.` }, cors, 300);
+  if (!r.ok) return json({ error: 'Price source is busy, try again in a minute.' }, cors, 30);
+  const d = (await r.json()).chart?.result?.[0];
+  if (!d?.timestamp?.length) return json({ error: `No price history for ${symbol}.` }, cors, 300);
+  const off = d.meta.gmtoffset || 0;
+  const iso = (sec) => new Date((sec + off) * 1000).toISOString().slice(0, 10);
+  const closes = d.indicators.quote[0].close;
+  const byDate = new Map();
+  d.timestamp.forEach((t, i) => { if (closes[i] != null) byDate.set(iso(t), +closes[i].toFixed(4)); });
+  const body = {
+    symbol,
+    name: d.meta.longName || d.meta.shortName || symbol,
+    type: d.meta.instrumentType || null,
+    currency: d.meta.currency || 'USD',
+    prices: [...byDate].sort((a, b) => a[0].localeCompare(b[0])),
+    dividends: Object.values(d.events?.dividends || {}).map((x) => [iso(x.date), +x.amount.toFixed(4)]).sort((a, b) => a[0].localeCompare(b[0])),
+  };
+  const res = json(body, {}, HISTORY_TTL);
+  ctx.waitUntil(cache.put(key, res.clone()));
   return withCors(res, cors);
 }
 

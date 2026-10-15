@@ -32,6 +32,16 @@
       "history_from": "2025-01-01"
     },
     {
+      "ticker": "SATA",
+      "yahoo": "SATA",
+      "name": "Strive Variable Rate Preferred",
+      "color": "#22C3D6",
+      "annual_dividend": 13.1,
+      "schedule": "daily",
+      "about": "Variable-rate perpetual preferred stock from Strive, a bitcoin treasury company. Moved from monthly to daily payouts in mid-2026: about $0.052 per trading day, roughly $13.10 a year on a $100 stated amount.",
+      "history_from": "2025-11-01"
+    },
+    {
       "ticker": "STRF",
       "yahoo": "STRF",
       "name": "Strategy Strife Preferred",
@@ -116,19 +126,21 @@
     {
       "label": "Even split",
       "mix": {
-        "STRC": 20,
-        "STRF": 20,
-        "STRK": 20,
-        "STRD": 20,
-        "BTCI": 20
+        "STRC": 17,
+        "SATA": 17,
+        "STRF": 17,
+        "STRK": 17,
+        "STRD": 16,
+        "BTCI": 16
       }
     },
     {
-      "label": "Strategy preferreds",
+      "label": "Preferreds only",
       "mix": {
-        "STRC": 40,
-        "STRF": 25,
-        "STRK": 20,
+        "STRC": 30,
+        "SATA": 20,
+        "STRF": 20,
+        "STRK": 15,
         "STRD": 15
       }
     },

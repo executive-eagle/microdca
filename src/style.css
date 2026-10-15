@@ -170,7 +170,7 @@ input[type='date'].field { text-align: left; }
 .btn.secondary { background: none; color: var(--brand); border: 1px solid var(--brand); }
 
 .mix { padding: 4px 0 2px; }
-.mix-row { display: grid; grid-template-columns: 56px 1fr 40px; gap: 10px; align-items: center; padding: 7px 0; font-size: 14px; }
+.mix-row { display: grid; grid-template-columns: 56px 1fr 40px 16px; gap: 10px; align-items: center; padding: 7px 0; font-size: 14px; }
 .mix-row b { font-weight: 600; display: flex; align-items: center; gap: 7px; }
 .mix-row output { text-align: right; color: var(--fg-2); }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
@@ -220,6 +220,7 @@ input[type='range'] { width: 100%; accent-color: var(--brand); height: 18px; }
 .earn { border: 1px solid var(--line); border-radius: 6px; padding: 20px 24px; }
 .earn .k { font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; }
 .earn .big { font-size: 30px; color: var(--brand); }
+.earn .roll .d > span { transition-duration: 0.28s; } /* ticks every second: quick roll so digits settle */
 .earn .rate { font-size: 13px; color: var(--muted); margin-top: 4px; }
 .earn .drip { height: 3px; background: var(--line); border-radius: 2px; margin-top: 14px; overflow: hidden; }
 .earn .drip i { display: block; height: 100%; width: 0; background: var(--brand); }
@@ -324,3 +325,12 @@ main .layout > div > .rangebar { animation: fade 0.6s 0.35s ease both; }
 .li .ret { justify-self: end; text-align: right; font-size: 13px; font-weight: 600; }
 .li.bucket-res { grid-template-columns: minmax(0, 1fr) auto 108px; }
 .li .sub2 { grid-column: 1 / -1; font-size: 13px; color: var(--fg-2); margin-top: -6px; }
+
+/* visitor-added tickers */
+.add-ticker { display: flex; gap: 8px; margin-top: 12px; }
+.add-ticker .field { text-align: left; text-transform: uppercase; flex: 1; min-width: 0; }
+.add-ticker .field::placeholder { text-transform: none; }
+.add-msg { font-size: 12.5px; margin: 6px 0 0; min-height: 18px; }
+.rm-t { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; }
+.rm-t:hover { color: var(--down); }
+.mix-row b .term { border-bottom-style: dotted; }

@@ -5,7 +5,7 @@ Free, open-source bitcoin DCA and bitcoin-income simulator.
 **Live site:** https://executive-eagle.github.io/microdca/
 
 - **Bitcoin DCA**: backtest buying bitcoin daily, weekly or monthly vs. a lump sum.
-- **Income**: DCA into STRC, STRF, STRK, STRD, BTCI (or any fund you add), then split every payout between reinvesting, buying BTC/IBIT, paying down margin, bills and savings, with opportunity cost and per-timeframe results.
+- **Income**: DCA into STRC, SATA, STRF, STRK, STRD, BTCI (or any ticker a visitor adds), then split every payout between reinvesting, buying BTC/IBIT, paying down margin, bills and savings, with opportunity cost and per-timeframe results.
 - **Live $10K**: a hypothetical $10,000 portfolio started Oct 15, 2026 that reinvests dividends every day.
 
 ## Add or change a fund
@@ -18,6 +18,8 @@ Everything lives in [`assets.json`](assets.json). Edit it on GitHub and commit:
 - **$10K portfolio**: `portfolio.allocation` and `portfolio.start_prices`.
 
 Prices and dividend history for every listed ticker are downloaded automatically.
+
+Visitors can also add their own tickers on the Income page ("Add a ticker"). Those are fetched on demand through the worker's `/history` endpoint, their yearly payout is taken from the last 12 months of dividends, and they're saved only in that visitor's browser.
 
 ## How data updates
 

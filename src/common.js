@@ -55,7 +55,7 @@ export function mountLayout(active) {
   footer.className = 'legal';
   footer.innerHTML = `
     <p><b>Educational simulation, not financial advice.</b> Past performance does not predict future results. Nothing on MicroDCA is a recommendation to buy or sell anything.</p>
-    <p><b>Strategy's preferred stock (STRC, STRF, STRK, STRD) is not collateralized by its bitcoin holdings, and dividends are not guaranteed.</b> STRD is non-cumulative: missed dividends are never owed.</p>
+    <p><b>Strategy's preferred stock (STRC, STRF, STRK, STRD) is not collateralized by its bitcoin holdings, and dividends are not guaranteed.</b> STRD is non-cumulative: missed dividends are never owed. Strive's SATA preferred dividends are likewise not guaranteed and its variable rate can change.</p>
     <p><b>Covered-call ETFs like BTCI cap upside and can lose value (NAV) over time.</b> A high distribution rate is not the same as total return.</p>
     <p><b>The $10K portfolio is hypothetical. No real money is invested.</b> Simulations ignore taxes, fees and trading costs. Strategy has indicated recent dividends were characterized as return of capital for tax purposes; talk to a tax professional.</p>
     <p id="data-meta"></p>`;

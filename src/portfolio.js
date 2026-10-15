@@ -13,7 +13,7 @@ const ASSETS = Object.keys(PORTFOLIO.allocation);
 const START = PORTFOLIO.startValue;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-let A = {}, INCOME = [], prices = {}, sched = 'daily', horizon = '1D', bars = null, dayCache = null, chart, base, playing = null, liveBtc = null, animateNext = true;
+let A = {}, INCOME = [], prices = {}, sched = 'daily', horizon = '1D', bars = {}, chart, base, playing = null, liveBtc = null, animateNext = true;
 
 /* ================= engine ================= */
 const priceOn = (t, d) => (t === BITCOIN.ticker && liveBtc && d >= todayISO() ? liveBtc : prices[t](d));
@@ -64,7 +64,7 @@ function live() {
 }
 
 function projection() {
-  const years = { '1Y': 1, '5Y': 5, '10Y': 10 }[horizon];
+  const years = { '5Y': 5, '10Y': 10 }[horizon];
   return simulate(addDays(base.today, Math.round(365.25 * years)));
 }
 function rowsForView() {
@@ -176,52 +176,80 @@ function pulse(rowEl, text) {
   plus._t = setTimeout(() => plus.classList.remove('show'), 700);
 }
 
-/* ================= 1D intraday ================= */
-const isLiveView = () => horizon === '1D' || horizon === 'NOW';
+/* ================= history windows (1D–1Y) ================= */
+const WINDOWS = { '1D': 1, '1W': 7, '1M': 30, '3M': 91, '1Y': 365 };
+const WINDOW_LABEL = { '1D': 'Past day', '1W': 'Past week', '1M': 'Past month', '3M': 'Past 3 months', '1Y': 'Past year' };
+const isWindow = () => horizon in WINDOWS;
+const isProjection = () => horizon === '5Y' || horizon === '10Y';
+const isLiveView = () => !isProjection();
 const BOUGHT_AT = Date.parse(PORTFOLIO.priceDate + 'T20:00:00Z'); // 4pm ET close the portfolio was bought at
+const ACCRUES_FROM = Date.parse(PORTFOLIO.inception + 'T00:00:00Z'); // dividends start on the first day
+let winCache = null;
 
-/** Portfolio value every 5 minutes over the last 24h (or since buying), from intraday prices of every holding. */
-function dayRows() {
-  if (!bars?.BTC || !base) return null;
-  const now = Date.now();
-  const from = Math.max(now - 864e5, BOUGHT_AT);
-  const grid = bars.BTC.map(([t]) => t).filter((t) => t >= from);
-  if (grid.length < 2) return null;
-  const v = live();
-  const shares = base.last.shares;
-  const idx = Object.fromEntries(ASSETS.map((a) => [a, 0]));
-  const rows = grid.map((t) => {
-    let val = 0;
-    for (const a of ASSETS) {
-      const b = bars[a] || [];
-      while (idx[a] + 1 < b.length && b[idx[a] + 1][0] <= t) idx[a]++;
-      // before a stock's first bar in the window (overnight), use its last daily close
-      const p = b.length && b[idx[a]][0] <= t ? b[idx[a]][1] : prices[a](toISO(new Date(t - 864e5)));
-      val += shares[a] * p;
-    }
-    // dividends accrue smoothly through the day
-    return { t, value: val + base.last.pending + Math.max(0, v.partial - (base.rate * (now - t)) / 1000) };
-  });
-  rows.push({ t: now, value: v.value });
-  return { rows, sinceBuy: from === BOUGHT_AT };
+/** Which data a window needs: 5-minute bars up to 2 days, hourly up to a month, daily beyond that. */
+function windowSource(h = horizon) {
+  const from = Math.max(Date.now() - WINDOWS[h] * 864e5, BOUGHT_AT);
+  const dur = Date.now() - from;
+  return { from, clipped: from === BOUGHT_AT, res: dur <= 2 * 864e5 ? '1d' : dur <= 31 * 864e5 ? '1mo' : 'daily' };
 }
 
-function dayHeadline(value, at = null) {
-  const d = dayCache;
-  if (!d) return headline(value, 'since Oct 15, 2026');
-  const start = d.rows[0].value;
+/**
+ * Portfolio value over the window, priced from every holding's intraday bars (or daily closes for long windows).
+ * Shares are the ones actually held that day (dividends get reinvested daily), so the line is exact, not estimated.
+ */
+function windowRows() {
+  if (!base) return null;
+  const { from, clipped, res } = windowSource();
+  const now = Date.now();
+  const v = live();
+  const byDate = new Map(base.rows.map((r) => [r.d, r]));
+  const held = (t) => byDate.get(addDays(toISO(new Date(t)), -1)) || base.last; // holdings at the start of that day
+  let rows;
+  const set = res === 'daily' ? null : bars[res];
+  if (set?.BTC) {
+    const grid = set.BTC.map(([t]) => t).filter((t) => t >= from);
+    const idx = Object.fromEntries(ASSETS.map((a) => [a, 0]));
+    rows = grid.map((t) => {
+      const h = held(t);
+      let val = 0;
+      for (const a of ASSETS) {
+        const b = set[a] || [];
+        while (idx[a] + 1 < b.length && b[idx[a] + 1][0] <= t) idx[a]++;
+        // before a stock's first bar (overnight / weekends), use its last daily close
+        const p = b.length && b[idx[a]][0] <= t ? b[idx[a]][1] : prices[a](toISO(new Date(t - 864e5)));
+        val += h.shares[a] * p;
+      }
+      // dividends accrue smoothly through the day
+      const intoDay = t < ACCRUES_FROM ? 0 : (t - Date.parse(toISO(new Date(t)) + 'T00:00:00Z')) / 1000;
+      return { t, value: val + (h.pending || 0) + perSecond(h.shares) * intoDay };
+    });
+  } else {
+    const fromDay = toISO(new Date(from));
+    rows = base.rows.filter((r) => r.d >= fromDay).map((r) => ({ t: Date.parse(r.d + 'T20:00:00Z'), value: r.value }));
+  }
+  rows.push({ t: now, value: v.value });
+  if (rows.length < 2) return null;
+  const span = res === '1d' ? 'day' : now - from <= 8 * 864e5 ? 'week' : 'month';
+  return { rows, clipped, span, daily: res === 'daily' || !set?.BTC };
+}
+
+function windowHeadline(value, at = null) {
+  const w = winCache;
+  if (!w) return headline(value, 'since Oct 15, 2026');
+  const start = w.rows[0].value;
   big(usd(value));
-  changeLine($('change'), value - start, start, at ? prettyTime(at, 'day') : d.sinceBuy ? 'since Oct 14 close' : 'Past day');
+  const when = at ? (w.daily ? prettyDate(toISO(new Date(at))) : prettyTime(at, w.span)) : w.clipped ? 'since Oct 14 close' : WINDOW_LABEL[horizon];
+  changeLine($('change'), value - start, start, when);
   setTrend(value >= start);
 }
 
-function drawDay() {
-  const d = (dayCache = dayRows());
-  if (!d) return draw(rowsForView()); // intraday unavailable → fall back to the daily chart
-  const rows = d.rows;
+function drawWindow() {
+  const w = (winCache = windowRows());
+  if (!w) return draw(rowsForView()); // no data yet → fall back to the since-start chart
+  const rows = w.rows;
   const up = rows.at(-1).value >= rows[0].value;
   const color = up ? css('--up') : css('--down');
-  const key = '1D' + rows.length;
+  const key = horizon + sched + rows.length;
   if (chart && chart.$key === key) {
     chart.data.datasets[0].data = rows.map((r) => r.value);
     chart.data.datasets[0].borderColor = color;
@@ -238,25 +266,35 @@ function drawDay() {
     yRange: { min: lo - pad, max: hi + pad },
     drawIn,
     pulse: 0,
-    dateLabel: (i) => prettyTime(rows[i].t, 'day'),
+    dateLabel: (i) => (w.daily ? prettyDate(toISO(new Date(rows[i].t))) : prettyTime(rows[i].t, w.span)),
     datasets: [
       { label: 'Value', data: rows.map((r) => r.value), color },
       { label: 'Start', data: rows.map(() => rows[0].value), color: css('--muted'), dashed: true },
     ],
     onScrub: (i) => {
       if (i == null) return refresh(true);
-      dayHeadline(rows[i].value, i === rows.length - 1 ? null : rows[i].t);
+      windowHeadline(rows[i].value, i === rows.length - 1 ? null : rows[i].t);
     },
   });
   chart.$key = key;
 }
 
+/** Fetch the intraday bars the current window needs (the worker and the page both cache them). */
+async function loadBars(h = horizon) {
+  if (!(h in WINDOWS)) return;
+  const { res } = windowSource(h);
+  if (res === 'daily') return;
+  const b = await intraday(LIVE_QUOTES_URL, res, ASSETS);
+  if (b) bars[res] = b;
+}
+
 const LEGEND_LAYERS = document.querySelector('.legend')?.innerHTML;
 function setLegend() {
   const el = document.querySelector('.legend');
-  el.innerHTML = horizon === '1D'
-    ? '<span><i class="sw" style="background:var(--accent, var(--up))"></i>Portfolio value</span><span><i class="sw dash"></i>Value at start of period</span><span class="muted">· every 5 min, live</span>'
-    : LEGEND_LAYERS;
+  if (!isWindow()) { el.innerHTML = LEGEND_LAYERS; return; }
+  const res = windowSource().res;
+  const every = res === '1d' ? 'every 5 min' : res === '1mo' ? 'hourly' : 'daily';
+  el.innerHTML = `<span><i class="sw" style="background:var(--accent, var(--up))"></i>Portfolio value</span><span><i class="sw dash"></i>Value at start of period</span><span class="muted">· ${every}, live</span>`;
 }
 
 /* ================= chart ================= */
@@ -308,7 +346,7 @@ function play() {
   stop(false);
   const rows = rowsForView();
   const n = rows.length;
-  const ms = isLiveView() ? 1800 : horizon === '1Y' ? 5000 : 7500;
+  const ms = isLiveView() ? 1800 : horizon === '5Y' ? 6000 : 7500;
   const t0 = performance.now();
   let prev = rows[0], lastPulse = 0;
   $('play').textContent = 'Pause';
@@ -339,9 +377,9 @@ function stop(restore = true) {
 /* ================= live loop ================= */
 function refresh(force) {
   if (playing) return;
-  if (horizon === '1D') {
+  if (isWindow()) {
     const v = live();
-    dayHeadline(v.value);
+    windowHeadline(v.value);
     split(v.value, v.earned);
   } else if (horizon === 'NOW') {
     const v = live();
@@ -349,7 +387,7 @@ function refresh(force) {
     split(v.value, v.earned);
   } else if (force) {
     const r = projection().at(-1);
-    headline(r.value, `in ${horizon.replace('Y', '')} year${horizon === '1Y' ? '' : 's'} if prices stay flat`);
+    headline(r.value, `in ${horizon.replace('Y', '')} years if prices stay flat`);
     split(r.value, r.earned);
   }
 }
@@ -373,10 +411,12 @@ function rebuild() {
   $('earn-since').textContent = 'since Oct 15';
   holdings(base.last, base.px);
   setLegend();
-  if (horizon === '1D' && !playing) drawDay(); else draw(rowsForView());
+  if (isWindow() && !playing) drawWindow(); else draw(rowsForView());
   refresh(true);
-  $('tl').innerHTML = horizon === '1D'
-    ? `Portfolio value every 5 minutes · ${dayCache?.sinceBuy ? 'since buying at the Oct 14 close' : 'past 24 hours'} · stock prices only move while the market is open`
+  $('tl').innerHTML = isWindow()
+    ? (winCache?.clipped
+      ? `The portfolio started Oct 15, 2026, so this shows everything since the Oct 14 close. Longer windows fill in as it ages.`
+      : `${WINDOW_LABEL[horizon]} · stock prices only move while the market is open, bitcoin trades 24/7`)
     : horizon === 'NOW'
     ? `Day <b>${Math.max(1, daysBetween(PORTFOLIO.priceDate, base.today))}</b> · prices update every 15 seconds while the market is open`
     : 'Projection holds every price flat at today\'s level, so only reinvested dividends grow it. Press play to watch.';
@@ -400,13 +440,17 @@ function marketBadge(live) {
     $('sched-lbl').innerHTML = term('Payouts', 'Daily (proposed): Strategy shareholders vote Oct 28, 2026 on paying every calendar day (STRC from Nov 2, 2026; STRF, STRK, STRD from Jan 4, 2027). Every holding here reinvests daily. Actual schedule: money still accrues daily, but is only reinvested on real pay dates (STRC twice a month, STRF/STRK/STRD quarterly, BTCI monthly).');
     $('earn-lbl').innerHTML = term('Dividends earned', 'Each income holding earns its yearly dividend ÷ 365 per share every day. This counter adds it up second by second.');
     $('split-h').innerHTML = `Where your ${term('money', 'Your money = the $10K you started with. Dividends = income paid to you and reinvested. Market move = how much prices have gone up or down.')} came from`;
-    rangeBar($('range'), [['1D', '1D'], ['NOW', 'All'], ['1Y', '1Y'], ['5Y', '5Y'], ['10Y', '10Y']], horizon, (h) => { horizon = h; animateNext = isLiveView(); stop(); if (!isLiveView()) play(); });
+    rangeBar($('range'), [['1D', '1D'], ['1W', '1W'], ['1M', '1M'], ['3M', '3M'], ['1Y', '1Y'], ['5Y', '5Y'], ['10Y', '10Y'], ['NOW', 'Max']], horizon, async (h) => {
+      horizon = h; animateNext = isLiveView();
+      await loadBars(h);
+      stop(); if (isProjection()) play();
+    });
     $('play').onclick = () => (playing ? stop() : play());
     $('sched').onchange = (e) => { sched = e.target.value; animateNext = true; stop(); };
     rebuild();
     revealSections();
     setInterval(() => refresh(false), 1000);
-    setInterval(tickEarn, 500);
+    setInterval(tickEarn, 1000);
     tickEarn();
     // every 2s: dividends drip off the counter; holdings take turns showing what they earn per minute
     let turn = 0;
@@ -423,9 +467,8 @@ function marketBadge(live) {
     const pull = async () => {
       clearTimeout(timer);
       if (document.hidden) return;
-      const [p, live, b] = await Promise.all([liveBTC(), liveQuotes(LIVE_QUOTES_URL), intraday(LIVE_QUOTES_URL, '1d', ASSETS)]);
+      const [p, live] = await Promise.all([liveBTC(), liveQuotes(LIVE_QUOTES_URL), loadBars()]);
       if (p) liveBtc = p;
-      if (b) bars = b;
       applyQuotes(prices, live);
       marketBadge(live);
       if (!playing) rebuild();
@@ -438,4 +481,4 @@ function marketBadge(live) {
     console.error(err);
   }
 })();
-onTheme(() => { if (base && !playing) { chart?.destroy(); chart = null; if (horizon === '1D') drawDay(); else draw(rowsForView()); holdings(base.last, base.px); } });
+onTheme(() => { if (base && !playing) { chart?.destroy(); chart = null; if (isWindow()) drawWindow(); else draw(rowsForView()); holdings(base.last, base.px); } });

@@ -19,14 +19,28 @@ export const PRESETS = raw.income_presets;
 export const PAYOUT_PRESETS = raw.payout_presets || [{ label: 'Reinvest all', buckets: [{ kind: 'same', pct: 100 }] }];
 export const GROWTH = raw.growth || [];
 
+/* ---------- tickers a visitor adds on the site (kept in their browser) ---------- */
+let CUSTOM = [];
+const CUSTOM_COLORS = ['#F472B6', '#A3E635', '#FB923C', '#60A5FA', '#FACC15', '#34D399', '#C084FC', '#F87171'];
+export const customColor = (i) => CUSTOM_COLORS[i % CUSTOM_COLORS.length];
+export const setCustom = (list) => { CUSTOM = list; };
+const everything = () => [raw.bitcoin, ...GROWTH, ...raw.income, ...CUSTOM];
+
+/** Guess a payout schedule from how many payouts happened in the past year. */
+export function inferSchedule(divs, asOf) {
+  const from = new Date(new Date(asOf).getTime() - 365 * 864e5).toISOString().slice(0, 10);
+  const n = divs.filter(([d]) => d > from).length;
+  return n >= 150 ? 'daily' : n >= 40 ? 'weekly' : n >= 20 ? 'semimonthly' : n >= 10 ? 'monthly' : n >= 3 ? 'quarterly' : n >= 1 ? 'yearly' : 'none';
+}
+
 /** Everything payouts can be routed into: bitcoin, growth assets, and income funds. */
-export const buyTargets = (data) => [raw.bitcoin, ...GROWTH, ...raw.income]
+export const buyTargets = (data) => [raw.bitcoin, ...GROWTH, ...raw.income, ...CUSTOM]
   .filter((a) => data.series[a.ticker])
   .map((a) => ({ ticker: a.ticker, name: a.name, color: a.color }));
 
 /** Income assets, with annual dividend resolved ("ttm" uses the downloaded payout history). */
 export function incomeAssets(data) {
-  return Object.fromEntries(raw.income.filter((a) => data.series[a.ticker]).map((a) => {
+  return Object.fromEntries([...raw.income, ...CUSTOM].filter((a) => data.series[a.ticker]).map((a) => {
     const divs = data.series[a.ticker].dividends;
     const last = data.series[a.ticker].prices.at(-1)[0];
     const annual = a.annual_dividend === 'ttm' ? ttm(divs, last) : Number(a.annual_dividend);
@@ -40,8 +54,9 @@ export function incomeAssets(data) {
   }));
 }
 
-export const colorOf = (t) => [raw.bitcoin, ...GROWTH, ...raw.income].find((a) => a.ticker === t)?.color || '#888';
-export const nameOf = (t) => [raw.bitcoin, ...GROWTH, ...raw.income].find((a) => a.ticker === t)?.name || t;
+export const colorOf = (t) => everything().find((a) => a.ticker === t)?.color || '#888';
+export const nameOf = (t) => everything().find((a) => a.ticker === t)?.name || t;
+export const isCustom = (t) => CUSTOM.some((a) => a.ticker === t);
 
 /** Is `iso` a scheduled payout date for this asset under its normal schedule? */
 export function isPayDay(asset, iso) {

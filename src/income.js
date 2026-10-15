@@ -2,7 +2,7 @@ import {
   mountLayout, revealSections, drawInFor, reduceMotion, loadData, priceLookup, liveBTC, liveQuotes, applyQuotes, scheduleDates, eachDay, downsample, lineChart, rangeBar, setTrend, roller, Chart,
   usd, usd0, pct, btc, num, stat, term, changeLine, signClass, prettyDate, parseISO, addDays, daysBetween, todayISO, sparkline, css, onTheme, FREQ_WORD,
 } from './common.js';
-import { incomeAssets, buyTargets, colorOf, nameOf, PRESETS, PAYOUT_PRESETS, BITCOIN, LIVE_QUOTES_URL } from './config.js';
+import { incomeAssets, buyTargets, colorOf, nameOf, PRESETS, PAYOUT_PRESETS, BITCOIN, LIVE_QUOTES_URL, setCustom, customColor, inferSchedule, isCustom } from './config.js';
 
 mountLayout('income.html');
 
@@ -371,8 +371,96 @@ function draw() {
 
 /* ---------- inputs ---------- */
 function renderMix() {
-  $('mix').innerHTML = TICKERS.map((t) => `<div class="mix-row"><b><span class="dot" style="background:${A[t].color}"></span>${t}</b>
-    <input type="range" min="0" max="100" step="5" value="${state.mix[t] || 0}" data-t="${t}" aria-label="${t} share of each purchase" /><output>${state.mix[t] || 0}%</output></div>`).join('');
+  $('mix').innerHTML = TICKERS.map((t) => `<div class="mix-row"><b><span class="dot" style="background:${A[t].color}"></span>${isCustom(t) ? term(t, A[t].about) : t}</b>
+    <input type="range" min="0" max="100" step="1" value="${state.mix[t] || 0}" data-t="${t}" aria-label="${t} share of each purchase" /><output>${state.mix[t] || 0}%</output>${isCustom(t) ? `<button class="rm-t" data-rm="${t}" aria-label="Remove ${t}">×</button>` : '<span></span>'}</div>`).join('');
+}
+
+/* ---------- tickers visitors add (saved in their browser, data via the worker) ---------- */
+const CUSTOM_KEY = 'microdca-custom-tickers';
+let custom = [];
+const MAX_CUSTOM = 8;
+function readCustom() { try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]').filter((c) => c && c.ticker); } catch { return []; } }
+function saveCustom() { try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom.map(({ ticker, color }) => ({ ticker, color })))); } catch {} }
+const SCHEDULE_WORD = { daily: 'daily', weekly: 'weekly', semimonthly: 'twice-a-month', monthly: 'monthly', quarterly: 'quarterly', yearly: 'yearly' };
+
+async function fetchHistory(sym) {
+  const r = await fetch(LIVE_QUOTES_URL.replace(/\/quotes$/, '/history') + '?symbol=' + encodeURIComponent(sym));
+  const j = await r.json();
+  if (j.error) throw new Error(j.error);
+  if (j.prices.length < 20) throw new Error(`${sym} doesn't have enough price history yet.`);
+  return j;
+}
+
+/** Turns a fetched history into an asset the simulator understands (yearly payout = last 12 months). */
+function toAsset(h, color) {
+  data.series[h.symbol] = { prices: h.prices, dividends: h.dividends };
+  const last = h.prices.at(-1)[0];
+  const schedule = inferSchedule(h.dividends, last);
+  const from = new Date(new Date(last).getTime() - 365 * 864e5).toISOString().slice(0, 10);
+  const ttm = h.dividends.filter(([d]) => d > from).reduce((s, [, v]) => s + v, 0);
+  const pays = schedule === 'none' ? 'No payouts in the last year (counts as a growth holding).' : `Pays ${SCHEDULE_WORD[schedule]}, about ${usd(ttm)} per share over the last 12 months.`;
+  return { ticker: h.symbol, yahoo: h.symbol, name: h.name, color, annual_dividend: 'ttm', schedule, about: `Added by you. ${pays}`, history_from: h.prices[0][0] };
+}
+
+/** (Re)builds the fund list from assets.json + the visitor's tickers. */
+function initAssets() {
+  setCustom(custom);
+  A = incomeAssets(data);
+  TICKERS = Object.keys(A);
+  TARGETS = buyTargets(data);
+  for (const t of new Set([...TICKERS, ...TARGETS.map((x) => x.ticker), 'BTC'])) prices[t] ??= priceLookup(data.series[t].prices);
+  for (const t of TICKERS) { events[t] = new Map(data.series[t].dividends); rates[t] = dailyRate(t); }
+}
+
+/** Drops anything in the saved plan that points at a ticker that no longer exists. */
+function sanitize() {
+  const known = new Set(TARGETS.map((t) => t.ticker));
+  state.buckets = state.buckets.filter((b) => kindOf(bucketKey(b)) !== 'buy' || known.has(targetOf(bucketKey(b))));
+  if (!state.buckets.length) state.buckets = [{ key: 'same', pct: 100 }];
+  if (!known.has(state.compare)) state.compare = 'BTC';
+  for (const t of Object.keys(state.mix)) if (!A[t]) delete state.mix[t];
+}
+
+function refreshCompare() {
+  $('compare').innerHTML = TARGETS.map((t) => `<option value="${t.ticker}">${t.ticker}</option>`).join('');
+  $('compare').value = state.compare;
+}
+
+async function addTicker() {
+  const sym = $('add-sym').value.trim().toUpperCase();
+  const msg = (t, cls = '') => { $('add-msg').innerHTML = t ? `<span class="${cls}">${t}</span>` : ''; };
+  if (!sym) return;
+  if (A[sym] || TARGETS.some((t) => t.ticker === sym)) return msg(`${sym} is already in the list.`);
+  if (custom.length >= MAX_CUSTOM) return msg(`You can add up to ${MAX_CUSTOM} tickers. Remove one first.`, 'neg');
+  $('add-btn').disabled = true;
+  msg(`Looking up ${sym}…`, 'muted');
+  try {
+    const h = await fetchHistory(sym);
+    custom.push(toAsset(h, customColor(custom.length)));
+    saveCustom();
+    initAssets();
+    state.mix[sym] = 10;
+    renderMix(); renderBucketEditor(); refreshCompare();
+    $('add-sym').value = '';
+    msg(`Added ${h.name} at 10% of each purchase. Drag its slider to change it.`, 'pos');
+    animateNext = true;
+    render();
+  } catch (err) {
+    msg(err.message || `Couldn't add ${sym}. Try again.`, 'neg');
+  } finally {
+    $('add-btn').disabled = false;
+  }
+}
+
+function removeTicker(t) {
+  custom = custom.filter((c) => c.ticker !== t);
+  saveCustom();
+  delete state.mix[t];
+  initAssets();
+  sanitize();
+  renderMix(); renderBucketEditor(); refreshCompare();
+  $('add-msg').textContent = `Removed ${t}.`;
+  render();
 }
 function applyPreset(i) {
   const mix = PRESETS[i].mix;
@@ -414,8 +502,7 @@ function bindRouter() {
   };
   $('route').value = state.route;
   $('route').onchange = (e) => { state.route = e.target.value; render(); };
-  $('compare').innerHTML = TARGETS.map((t) => `<option value="${t.ticker}">${t.ticker}</option>`).join('');
-  $('compare').value = state.compare;
+  refreshCompare();
   $('compare').onchange = (e) => { state.compare = e.target.value; render(); };
   $('m-bal').value = state.margin.balance;
   $('m-apr').value = state.margin.apr;
@@ -430,11 +517,11 @@ function bindRouter() {
 (async () => {
   try {
     data = await loadData();
-    A = incomeAssets(data);
-    TICKERS = Object.keys(A);
-    TARGETS = buyTargets(data);
-    for (const t of new Set([...TICKERS, ...TARGETS.map((x) => x.ticker), 'BTC'])) prices[t] = priceLookup(data.series[t].prices);
-    for (const t of TICKERS) { events[t] = new Map(data.series[t].dividends); rates[t] = dailyRate(t); }
+    // the visitor's own tickers (fetched in parallel; anything that fails to load is skipped)
+    const saved = readCustom().slice(0, MAX_CUSTOM);
+    const got = await Promise.all(saved.map((c) => fetchHistory(c.ticker).then((h) => toAsset(h, c.color || customColor(0))).catch(() => null)));
+    custom = got.filter(Boolean);
+    initAssets();
     // grab live prices first (max 1.5s) so today's numbers are current and the intro animation only plays once
     const [btcNow, quotes] = await Promise.race([
       Promise.all([liveBTC(), liveQuotes(LIVE_QUOTES_URL)]),
@@ -445,11 +532,14 @@ function bindRouter() {
     state.end = TICKERS.map((t) => prices[t].last).sort()[0];
     state.start = TICKERS.map((t) => prices[t].first).sort().at(-1);
     restore();
-    if (!TARGETS.some((t) => t.ticker === state.compare)) state.compare = TARGETS[0].ticker;
+    sanitize();
 
     $('presets').innerHTML = PRESETS.map((p, i) => `<button data-i="${i}">${p.label}</button>`).join('');
     $('presets').onclick = (e) => { const b = e.target.closest('button'); if (b) { applyPreset(+b.dataset.i); animateNext = true; render(); } };
     applyPreset(0);
+    $('add-btn').onclick = addTicker;
+    $('add-sym').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); addTicker(); } };
+    $('mix').onclick = (e) => { const b = e.target.closest('[data-rm]'); if (b) removeTicker(b.dataset.rm); };
     $('mix').oninput = (e) => {
       const t = e.target.dataset.t; if (!t) return;
       state.mix[t] = +e.target.value;
