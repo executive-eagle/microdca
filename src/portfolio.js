@@ -347,6 +347,8 @@ function draw(rows, upto = rows.length - 1) {
 }
 
 /* ================= time-lapse ================= */
+// long label on desktop, short one on phones so the range row fits without sideways scrolling
+const setPlay = (long, short = long) => { $('play').innerHTML = `<span class="lbl-long">${long}</span><span class="lbl-short">${short}</span>`; };
 function play() {
   stop(false);
   const rows = rowsForView();
@@ -354,7 +356,7 @@ function play() {
   const ms = isLiveView() ? 1800 : horizon === '5Y' ? 6000 : 7500;
   const t0 = performance.now();
   let prev = rows[0], lastPulse = 0;
-  $('play').textContent = 'Pause';
+  setPlay('Pause');
   const frame = (now) => {
     const k = Math.min(1, (now - t0) / ms);
     const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
@@ -368,14 +370,14 @@ function play() {
     $('tl').innerHTML = `Day <b>${daysBetween(PORTFOLIO.priceDate, r.d).toLocaleString()}</b> · ${prettyDate(r.d)}${r.d > base.today ? ' · prices held flat' : ''}`;
     if (now - lastPulse > 420) { holdings(r, r.px, prev); prev = r; lastPulse = now; }
     if (k < 1) playing = requestAnimationFrame(frame);
-    else { playing = null; holdings(r, r.px, prev); $('play').textContent = 'Replay'; }
+    else { playing = null; holdings(r, r.px, prev); setPlay('Replay'); }
   };
   playing = requestAnimationFrame(frame);
 }
 function stop(restore = true) {
   if (playing) cancelAnimationFrame(playing);
   playing = null;
-  $('play').textContent = 'Play time-lapse';
+  setPlay('Play time-lapse', 'Play');
   if (restore) rebuild();
 }
 
