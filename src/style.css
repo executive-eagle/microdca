@@ -651,3 +651,100 @@ html, body { overflow-x: clip; }
 .more-btn { display: block; width: 100%; margin-top: 4px; padding: 12px 0; background: none; border: 0; border-bottom: 1px solid var(--line); color: var(--brand); font-weight: 600; font-size: 14px; cursor: pointer; text-align: left; }
 .more-btn:hover { color: var(--fg); }
 @media (max-width: 600px) { .ctable.days .opt { display: none; } .ctable.days { font-size: 13px; } }
+
+/* ================= ATM Tracker: the party ================= */
+.jar .fx { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.critter { position: absolute; bottom: 10px; width: 74px; height: 74px; }
+.critter svg { width: 100%; height: 100%; display: block; overflow: visible; }
+/* bulls: pop up, dance (hop + sway + spin), leave */
+.critter.bull { animation: bull-party 3.4s cubic-bezier(.3,.6,.3,1) forwards; transform-origin: 50% 100%; }
+.critter.bull .legs rect { animation: kick 0.25s ease-in-out infinite alternate; transform-origin: 50% 0; }
+.critter.bull .legs rect:nth-child(2) { animation-delay: 0.125s; }
+@keyframes kick { to { transform: rotate(22deg); } }
+@keyframes bull-party {
+  0% { transform: translateY(110%) scale(0.4); opacity: 0; }
+  8% { transform: translateY(-34px) scale(1.15) scaleX(var(--flip, 1)); opacity: 1; }
+  14% { transform: translateY(0) scale(1) scaleX(var(--flip, 1)); }
+  22% { transform: translateY(-22px) rotate(-14deg) scaleX(var(--flip, 1)); }
+  30% { transform: translateY(0) rotate(12deg) scaleX(var(--flip, 1)); }
+  38% { transform: translateY(-26px) rotate(-12deg) scaleX(var(--flip, 1)); }
+  46% { transform: translateY(0) rotate(360deg) scaleX(var(--flip, 1)); }
+  54% { transform: translateY(-18px) rotate(352deg) scaleX(var(--flip, 1)); }
+  62% { transform: translateY(0) rotate(372deg) scaleX(var(--flip, 1)); }
+  72% { transform: translateY(-30px) rotate(350deg) scale(1.1) scaleX(var(--flip, 1)); }
+  82% { transform: translateY(0) rotate(360deg) scaleX(var(--flip, 1)); opacity: 1; }
+  100% { transform: translateY(-60px) rotate(360deg) scale(0.6) scaleX(var(--flip, 1)); opacity: 0; }
+}
+/* bears: waddle in, wobble, fall flat, see stars, fade */
+.critter.bear { animation: bear-walk 1.5s ease-out forwards; transform-origin: 50% 100%; }
+.critter.bear.from-left { --dx: -160px; } .critter.bear.from-right { --dx: 160px; }
+.critter .eyes-x, .critter .eyes-happy, .critter .eyes-closed, .critter .tear, .critter .hat, .critter .mouth-happy { display: none; }
+.critter.bull .mouth-happy { display: inline; } .critter.bull .mouth-sad { display: none; }
+/* happy (party) bear: hat, grin, dances like the bulls do */
+.critter.bear.happy { animation: bull-party 3.4s cubic-bezier(.3,.6,.3,1) forwards; }
+.critter.bear.happy .hat, .critter.bear.happy .eyes-happy, .critter.bear.happy .mouth-happy { display: inline; }
+.critter.bear.happy .eyes-open, .critter.bear.happy .mouth-sad { display: none; }
+/* sad sleeping bull */
+.critter.sleepy .shades, .critter.sleepy .mouth-happy { display: none; }
+.critter.sleepy .eyes-closed, .critter.sleepy .tear, .critter.sleepy .mouth-sad { display: inline; }
+@keyframes bear-walk {
+  0% { transform: translateX(var(--dx)) rotate(0); opacity: 0; }
+  15% { opacity: 1; }
+  30% { transform: translateX(calc(var(--dx) * 0.7)) rotate(-6deg); }
+  50% { transform: translateX(calc(var(--dx) * 0.45)) rotate(6deg); }
+  70% { transform: translateX(calc(var(--dx) * 0.2)) rotate(-6deg); }
+  100% { transform: translateX(0) rotate(0); opacity: 1; }
+}
+.critter.bear.knocked { animation: bear-fall 2.7s cubic-bezier(.5,0,.4,1) forwards; }
+.critter.bear.knocked .eyes-open { display: none; }
+.critter.bear.knocked .eyes-x { display: inline; }
+.critter.bear.knocked .mouth-sad { display: inline; }
+@keyframes bear-fall {
+  0% { transform: rotate(0); }
+  10% { transform: rotate(-14deg); }
+  20% { transform: rotate(10deg); }
+  38% { transform: rotate(92deg) translate(6px, -4px); }
+  44% { transform: rotate(84deg) translate(6px, -10px); }
+  50% { transform: rotate(90deg) translate(6px, -4px); opacity: 1; }
+  85% { transform: rotate(90deg) translate(6px, -4px); opacity: 1; }
+  100% { transform: rotate(90deg) translate(6px, -4px); opacity: 0; }
+}
+.critter .stars { position: absolute; left: 50%; top: -6px; transform: translateX(-50%); font-size: 13px; color: #FFD24A; letter-spacing: 3px; opacity: 0; white-space: nowrap; }
+.critter.bear.knocked .stars { animation: stars 1.6s 0.9s linear forwards; }
+@keyframes stars { 0% { opacity: 0; transform: translateX(-50%) rotate(0); } 15% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) rotate(360deg); } }
+/* the sleepy bear while the ATM is paused */
+.critter.sleepy { right: 14px; bottom: 6px; width: 64px; height: 64px; transform: rotate(78deg); transform-origin: 50% 80%; opacity: 0.85; }
+.critter.sleepy svg { animation: snore 2.6s ease-in-out infinite; }
+@keyframes snore { 50% { transform: scale(1.04, 0.97); } }
+.zzz { position: absolute; left: -6px; top: -2px; transform: rotate(-78deg); color: var(--muted); font-weight: 700; font-size: 13px; }
+.zzz i { font-style: normal; position: absolute; opacity: 0; animation: z 2.4s linear infinite; }
+.zzz i:nth-child(2) { animation-delay: 0.8s; } .zzz i:nth-child(3) { animation-delay: 1.6s; }
+@keyframes z { 0% { opacity: 0; transform: translate(0, 0) scale(0.7); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(-14px, -26px) scale(1.3); } }
+/* mega buy: flash + shake */
+.jar.flash::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 50% 70%, rgba(255,220,150,0.65), rgba(247,147,26,0.15) 45%, transparent 70%); animation: flash 0.7s ease-out forwards; pointer-events: none; }
+@keyframes flash { from { opacity: 1; } to { opacity: 0; } }
+.jar.shake { animation: shake 0.55s cubic-bezier(.36,.07,.19,.97); }
+@keyframes shake { 10%, 90% { transform: translate(-2px, 1px); } 20%, 80% { transform: translate(4px, -2px); } 30%, 50%, 70% { transform: translate(-6px, 2px); } 40%, 60% { transform: translate(6px, -1px); } }
+
+/* soundtrack card */
+.music { margin-top: 12px; width: min(100%, 360px); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--bg); }
+.music-top { display: flex; align-items: center; gap: 10px; padding: 8px 10px; font-size: 13px; color: var(--fg-2); }
+.music-top b { color: var(--fg); font-weight: 600; }
+.music-x { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
+.music iframe { display: block; width: 100%; aspect-ratio: 16 / 9; min-height: 200px; border: 0; }
+.eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; }
+.eq i { width: 3px; background: var(--brand); animation: eq 0.8s ease-in-out infinite alternate; }
+.eq i:nth-child(2) { animation-delay: 0.25s; } .eq i:nth-child(3) { animation-delay: 0.5s; }
+@keyframes eq { from { height: 3px; } to { height: 12px; } }
+@media (max-width: 600px) { .critter { width: 58px; height: 58px; } .music { width: 100%; } }
+/* keep the big number readable through the coin storm */
+.jar-readout { z-index: 2; }
+.jar-readout::before { content: ''; position: absolute; left: 50%; top: -14px; width: min(560px, 92%); height: 150px; transform: translateX(-50%); z-index: -1;
+  background: radial-gradient(closest-side, rgba(0,0,0,0.78), rgba(0,0,0,0.45) 60%, transparent); filter: blur(4px); }
+:root[data-theme='light'] .jar-readout::before { background: radial-gradient(closest-side, rgba(255,255,255,0.9), rgba(255,255,255,0.55) 60%, transparent); }
+.jar-big { text-shadow: 0 0 18px rgba(0,0,0,0.55), 0 2px 24px rgba(247,147,26,0.25); }
+.jar .fx { z-index: 1; }
+/* outline around the big number so it reads over the coin storm */
+.jar-big { -webkit-text-stroke: 4px #000; paint-order: stroke fill; }
+.jar-big .d > span > i, .jar-big .s { -webkit-text-stroke: inherit; paint-order: stroke fill; }
+:root[data-theme='light'] .jar-big { -webkit-text-stroke: 4px #fff; }

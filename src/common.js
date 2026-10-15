@@ -325,7 +325,9 @@ export function roller(el) {
       if (changed > 3) instant = true;
     } else if (text.length !== prev.length) instant = true;
     el.classList.toggle('instant', instant);
-    const reuse = text.length === prev.length && el.children.length === text.length;
+    // reuse the digit slots only if digits and symbols sit in the same places (e.g. the decimal point didn't move)
+    const shape = (x) => x.replace(/\d/g, '0');
+    const reuse = text.length === prev.length && el.children.length === text.length && shape(text) === shape(prev);
     if (!reuse) {
       el.innerHTML = [...text].map((c) => /\d/.test(c)
         ? `<span class="d"><span>${'0123456789'.split('').map((n) => `<i>${n}</i>`).join('')}</span></span>`

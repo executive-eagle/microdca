@@ -85,6 +85,22 @@ function todayEstimate(t) {
 }
 
 /* ================= today's jar: coins pile up as the ATM buys ================= */
+/**
+ * Soundtrack: Creed's "Higher", via the official CreedVEVO video embedded from YouTube
+ * (the audio isn't hosted here). YouTube requires the player to be visible, so it's a small card.
+ */
+const SONG = { id: 'J16lInLZRms', title: 'Creed — Higher' };
+const music = {
+  play() {
+    const box = $('music');
+    box.innerHTML = `<div class="music-top"><span class="eq"><i></i><i></i><i></i></span><span>Now playing <b>${SONG.title}</b></span><button class="music-x" aria-label="Stop the music">×</button></div>
+      <iframe src="https://www.youtube-nocookie.com/embed/${SONG.id}?autoplay=1&playsinline=1&rel=0&modestbranding=1" title="${SONG.title} (official video)" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+    box.hidden = false;
+    box.querySelector('.music-x').onclick = () => document.getElementById('sound').click();
+  },
+  stop() { const box = $('music'); box.innerHTML = ''; box.hidden = true; },
+};
+
 const sound = (() => {
   const KEY = 'microdca-coin-sound';
   let on = false, ac = null, last = 0;
@@ -92,8 +108,15 @@ const sound = (() => {
   const ICON_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 010 7"/><path d="M19 6a8.5 8.5 0 010 12"/></svg>';
   const ICON_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l5 6"/><path d="M22 9l-5 6"/></svg>';
   const btn = document.getElementById('sound');
-  const sync = () => { btn.innerHTML = on ? ICON_ON : ICON_OFF; btn.setAttribute('aria-label', on ? 'Turn coin sounds off' : 'Turn coin sounds on'); btn.classList.toggle('on', on); };
-  btn.onclick = () => { on = !on; try { localStorage.setItem(KEY, on ? '1' : '0'); } catch {} if (on) { ac ??= new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); clink(); } sync(); };
+  const sync = () => { btn.innerHTML = on ? ICON_ON : ICON_OFF; btn.setAttribute('aria-label', on ? 'Turn sound and music off' : 'Turn on sound and music (Creed, Higher)'); btn.title = on ? 'Sound off' : 'Sound on (plays Creed, Higher)'; btn.classList.toggle('on', on); };
+  btn.onclick = () => {
+    on = !on;
+    try { localStorage.setItem(KEY, on ? '1' : '0'); } catch {}
+    if (on) { ac ??= new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); clink(); music.play(); } else music.stop();
+    sync();
+  };
+  // sound starts off on every visit (browsers only allow audio after a tap anyway)
+  on = false;
   sync();
   /** A short, quiet two-tone "clink". */
   function clink() {
@@ -108,13 +131,119 @@ const sound = (() => {
       o.connect(v).connect(ac.destination); o.start(now); o.stop(now + 0.17);
     }
   }
-  return { clink };
+  /** A short low "boom" for big buys: filtered noise with a fast decay. */
+  function boom(size = 1) {
+    if (!on || !ac) return;
+    const now = ac.currentTime, len = 0.5 + 0.3 * size;
+    const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * len), ac.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / ch.length, 2.5);
+    const src = ac.createBufferSource(), lp = ac.createBiquadFilter(), v = ac.createGain();
+    src.buffer = buf; lp.type = 'lowpass'; lp.frequency.setValueAtTime(900 * size, now); lp.frequency.exponentialRampToValueAtTime(60, now + len);
+    v.gain.setValueAtTime(0.22 * Math.min(1.5, size), now); v.gain.exponentialRampToValueAtTime(0.0001, now + len);
+    src.connect(lp).connect(v).connect(ac.destination); src.start(now);
+  }
+  /** Firework pop: a quick crackly burst. */
+  function pop() {
+    if (!on || !ac) return;
+    const now = ac.currentTime;
+    const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.25), ac.sampleRate), ch = buf.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / ch.length, 4) * (Math.random() < 0.1 ? 1 : 0.4);
+    const src = ac.createBufferSource(), hp = ac.createBiquadFilter(), v = ac.createGain();
+    src.buffer = buf; hp.type = 'highpass'; hp.frequency.value = 700; v.gain.value = 0.12;
+    src.connect(hp).connect(v).connect(ac.destination); src.start(now);
+  }
+  return { clink, boom, pop };
 })();
 
 const jar = (() => {
   const cv = $('jar'), ctx = cv.getContext('2d');
   const CW = 30, CH = 10, TH = 4; // coin width, face height, thickness
-  let W = 0, H = 0, unit = 5, cols = [], coins = [], falling = [], pops = [], raf = null;
+  const SATS_PER_COIN = 1_000_000; // each coin is 1,000,000 sats = 0.01 BTC
+  let W = 0, H = 0, unit = SATS_PER_COIN / 1e8, cols = [], coins = [], falling = [], pops = [], raf = null;
+  let sparks = [], rings = [], rockets = [];
+  const PALETTES = [['#F7931A', '#FFD27A', '#FFFFFF'], ['#00C805', '#B6FF9E', '#FFFFFF'], ['#5B8DEF', '#A9C4FF', '#FFFFFF'], ['#22C3D6', '#9DF3FF', '#FFFFFF'], ['#FF4FA3', '#FFC2E1', '#FFFFFF'], ['#FFD24A', '#FFF3B0', '#FF9F1C']];
+  // points of a "₿" glyph, for the bitcoin-shaped burst
+  const BTC_SHAPE = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.font = '800 60px DM Sans, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('₿', 32, 34);
+    const d = g.getImageData(0, 0, 64, 64).data, pts = [];
+    for (let y = 0; y < 64; y += 3) for (let x = 0; x < 64; x += 3) if (d[(y * 64 + x) * 4 + 3] > 128) pts.push([(x - 32) / 32, (y - 32) / 32]);
+    return pts;
+  })();
+  /** Launch a firework rocket that bursts near the top of the jar. */
+  function rocket(type, delay = 0) {
+    if (reduceMotion) return;
+    const types = ['peony', 'ring', 'willow', 'crackle'];
+    rockets.push({ x: W * (0.12 + Math.random() * 0.76), y: H - 8, vy: -(7.5 + Math.random() * 2.5), apex: H * (0.12 + Math.random() * 0.28),
+      type: type || types[(Math.random() * types.length) | 0], pal: PALETTES[(Math.random() * PALETTES.length) | 0], t0: performance.now() + delay });
+    kick();
+  }
+  function burst(r) {
+    const add = (vx, vy, extra = {}) => sparks.push({ x: r.x, y: r.y, vx, vy, life: 0, max: 55 + Math.random() * 25, r: 1.6 + Math.random() * 1.4, c: r.pal[(Math.random() * r.pal.length) | 0], drag: 0.97, g: 0.07, ...extra });
+    if (r.type === 'btc') {
+      const s = 2.3 + Math.random() * 0.5;
+      for (const [px, py] of BTC_SHAPE) add(px * s * 2.2, py * s * 2.2, { c: Math.random() < 0.8 ? '#F7931A' : '#FFFFFF', max: 85, g: 0.025, drag: 0.94, r: 2 });
+    } else if (r.type === 'ring') {
+      const n = 46, s = 3.4 + Math.random();
+      for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; add(Math.cos(a) * s, Math.sin(a) * s); }
+    } else if (r.type === 'willow') {
+      for (let i = 0; i < 70; i++) { const a = Math.random() * Math.PI * 2, sp = Math.random() * 3; add(Math.cos(a) * sp, Math.sin(a) * sp, { c: '#FFC34D', max: 110, g: 0.05, drag: 0.985, trail: true }); }
+    } else if (r.type === 'crackle') {
+      for (let i = 0; i < 60; i++) { const a = Math.random() * Math.PI * 2, sp = 1 + Math.random() * 3.5; add(Math.cos(a) * sp, Math.sin(a) * sp, { crackle: true, c: '#FFFFFF' }); }
+    } else {
+      for (let i = 0; i < 80; i++) { const a = Math.random() * Math.PI * 2, sp = Math.pow(Math.random(), 0.4) * 4.2; add(Math.cos(a) * sp, Math.sin(a) * sp); }
+    }
+    rings.push({ x: r.x, y: r.y, r: 4, max: 44, life: 0, c: r.pal[0] });
+    sound.pop?.();
+  }
+  const SPARK_COLORS = ['#FFD27A', '#F7931A', '#FFB347', '#FFFFFF', '#FF7A00'];
+  /** Burst of sparks (and coin confetti when power ≥ 2) with a shockwave ring. */
+  function explode(x, y, power = 1) {
+    if (reduceMotion) return;
+    const n = Math.round(10 + power * 26);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, sp = (1.5 + Math.random() * 4.5) * (0.7 + power * 0.45);
+      sparks.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2.2 * power, life: 0, max: 40 + Math.random() * 30 * power,
+        r: 1.2 + Math.random() * 2.2, c: SPARK_COLORS[(Math.random() * SPARK_COLORS.length) | 0], coin: power >= 2 && Math.random() < 0.3, spin: Math.random() * 6 });
+    }
+    if (power >= 1.5) rings.push({ x, y, r: 6, max: 60 + power * 50, life: 0 });
+    if (sparks.length > 1600) sparks.splice(0, sparks.length - 1600);
+    kick();
+  }
+  function drawFx() {
+    let alive = false;
+    const now = performance.now();
+    rockets = rockets.filter((r) => {
+      if (now < r.t0) { alive = true; return true; }
+      r.y += r.vy; r.vy *= 0.985;
+      ctx.save(); ctx.fillStyle = '#FFE2A8'; ctx.shadowColor = '#F7931A'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.arc(r.x, r.y, 2.2, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      if (Math.random() < 0.8) sparks.push({ x: r.x + (Math.random() - 0.5) * 2, y: r.y + 4, vx: (Math.random() - 0.5) * 0.6, vy: 1 + Math.random(), life: 0, max: 16, r: 1.1, c: '#FFB347', drag: 0.9, g: 0.05 });
+      if (r.y <= r.apex || r.vy > -1.2) { burst(r); alive = true; return false; }
+      alive = true; return true;
+    });
+    rings = rings.filter((g) => {
+      g.life++; g.r += (g.max - g.r) * 0.12;
+      const a = Math.max(0, 1 - g.life / 32);
+      if (a <= 0) return false;
+      ctx.save(); ctx.strokeStyle = g.c ? rgba(g.c, a * 0.7) : `rgba(255,190,90,${a * 0.8})`; ctx.lineWidth = 3 * a + 0.5; ctx.beginPath(); ctx.arc(g.x, g.y, g.r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      alive = true; return true;
+    });
+    sparks = sparks.filter((p) => {
+      p.life++; p.x += p.vx; p.y += p.vy; p.vy += p.g ?? 0.16; p.vx *= p.drag ?? 0.985; if (p.drag) p.vy *= p.drag;
+      if (p.y > H - 12) { p.y = H - 12; p.vy *= -0.35; p.vx *= 0.7; }
+      const a = 1 - p.life / p.max;
+      if (a <= 0) return false;
+      ctx.save(); ctx.globalAlpha = a;
+      if (p.coin) { ctx.translate(p.x, p.y); ctx.scale(Math.cos(p.life / 4 + p.spin), 1); ctx.fillStyle = '#F7931A'; ctx.beginPath(); ctx.ellipse(0, 0, 6, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#9A5605'; ctx.lineWidth = 1; ctx.stroke(); }
+      else if (p.trail) { ctx.strokeStyle = p.c; ctx.lineWidth = 1.4; ctx.shadowColor = p.c; ctx.shadowBlur = 6; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 5, p.y - p.vy * 5); ctx.stroke(); }
+      else if (p.crackle && p.life > p.max * 0.45 && Math.random() < 0.5) { /* strobe off */ }
+      else { ctx.fillStyle = p.c; ctx.shadowColor = p.c; ctx.shadowBlur = p.crackle ? 10 : 6; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+      alive = true; return true;
+    });
+    return alive;
+  }
   function resize() {
     const dpr = Math.min(2, devicePixelRatio || 1);
     W = cv.clientWidth; H = cv.clientHeight;
@@ -132,18 +261,53 @@ const jar = (() => {
     }
     return i;
   }
+  const inPile = () => coins.length + falling.filter((f) => !f.ghost && !f.over).length;
+  const isFull = () => inPile() >= capacity();
   function place(t, animate, delay = 0) {
     if (!cols.length) cols = new Array(ncols()).fill(0);
+    // jar full: the coin still rains in, lands on top of the heap and bursts
+    if (isFull()) {
+      if (!animate || reduceMotion) return;
+      const top = H - 10 - Math.max(...cols) * TH - CH;
+      falling.push({ t, x: W * (0.15 + Math.random() * 0.7), y: top + Math.random() * 6, y0: -12, t0: performance.now() + delay, ms: 480 + Math.random() * 200, over: true });
+      kick(); return;
+    }
     // drop near the middle, spreading out as the pile grows
     const spread = Math.min(0.95, 0.12 + (coins.length + falling.length) / 500);
     let i = Math.round((cols.length - 1) / 2 + (Math.random() - 0.5) * spread * (cols.length - 1));
     i = settle(Math.max(0, Math.min(cols.length - 1, i)));
     const y = H - 10 - cols[i] * TH - CH / 2;
     cols[i]++;
-    const c = { t, x: colX(i) + (Math.random() - 0.5) * 4, y };
+    const c = { t, x: colX(i) + (Math.random() - 0.5) * 4, y, col: i };
     if (animate && !reduceMotion) falling.push({ ...c, y0: -12, t0: performance.now() + delay, ms: 520 + Math.random() * 220 });
-    else coins.push(c);
+    else land(c);
     kick();
+  }
+  /** Coins don't stay forever: each column drains from the top a few seconds after landing. */
+  const stacks = new Map(); let leaving = [];
+  function land(c) {
+    c.born = performance.now(); c.life = 3500 + Math.random() * 3500;
+    coins.push(c);
+    if (!stacks.has(c.col)) stacks.set(c.col, []);
+    stacks.get(c.col).push(c);
+  }
+  function drain(now) {
+    for (const [i, st] of stacks) {
+      const top = st.at(-1);
+      if (!top || now - top.born < top.life) continue;
+      st.pop(); cols[i] = Math.max(0, cols[i] - 1);
+      coins.splice(coins.indexOf(top), 1);
+      leaving.push({ ...top, t0: now });
+      if (st.length) st.at(-1).born = Math.min(st.at(-1).born, now - st.at(-1).life + 120 + Math.random() * 220); // the rest follow shortly
+    }
+    let alive = false;
+    leaving = leaving.filter((c) => {
+      const k = (now - c.t0) / 650;
+      if (k >= 1) return false;
+      coin(c.x + Math.sin(k * 9) * 3, c.y + k * k * 40, A[c.t].color, 1 - k);
+      alive = true; return true;
+    });
+    return alive || coins.length > 0;
   }
   function coin(x, y, color, a = 1) {
     ctx.save(); ctx.globalAlpha = a;
@@ -168,14 +332,15 @@ const jar = (() => {
     ctx.strokeStyle = 'rgba(247,147,26,0.25)'; ctx.setLineDash([4, 5]); ctx.beginPath(); ctx.moveTo(0, H - 9.5); ctx.lineTo(W, H - 9.5); ctx.stroke(); ctx.setLineDash([]);
     coins.sort((a, b) => a.y - b.y);
     for (const c of coins) coin(c.x, c.y, A[c.t].color);
-    let busy = false;
+    let busy = drain(now);
     falling = falling.filter((f) => {
       if (now < f.t0) { busy = true; return true; }
       const k = Math.min(1, (now - f.t0) / f.ms), e = k * k;
       coin(f.x, f.y0 + (f.y - f.y0) * e, A[f.t].color);
-      if (k >= 1) { coins.push({ t: f.t, x: f.x, y: f.y }); sound.clink(); busy = true; return false; }
+      if (k >= 1) { if (!f.over) land({ t: f.t, x: f.x, y: f.y, col: f.col }); sound.clink(); explode(f.x, f.y, f.over ? 0.5 : 0.35); busy = true; return false; }
       busy = true; return true;
     });
+    if (drawFx()) busy = true;
     pops = pops.filter((p) => {
       const k = (now - p.t0) / 1800;
       if (k < 0) { busy = true; return true; }
@@ -189,29 +354,38 @@ const jar = (() => {
   const kick = () => { if (!raf) raf = requestAnimationFrame(frame); };
   let counts = {};
   function rebuild(animate = false) {
-    cols = new Array(ncols()).fill(0); coins = []; falling = [];
+    cols = new Array(ncols()).fill(0); coins = []; falling = []; stacks.clear(); leaving = [];
+    // only as many coins as the jar holds (a big day is tens of thousands), in proportion per fund
+    const total = T.reduce((a, t) => a + (counts[t] || 0), 0), cap = capacity();
     const seq = [];
-    for (const t of T) for (let i = 0; i < (counts[t] || 0); i++) seq.push(t);
+    for (const t of T) { const n = total > cap ? Math.round(((counts[t] || 0) / total) * cap) : counts[t] || 0; for (let i = 0; i < n; i++) seq.push(t); }
     seq.sort(() => Math.random() - 0.5);
-    seq.forEach((t, i) => place(t, animate, i * Math.min(60, 2000 / (seq.length || 1))));
-    kick();
+    // coins don't stay, so on load just rain a short shower representing today (if there was any buying)
+    const shower = animate ? seq.slice(-150) : [];
+    shower.forEach((t, i) => place(t, true, i * Math.min(40, 2200 / shower.length)));
+    footer(); kick();
   }
+  const footer = () => {
+    const n = T.reduce((a, t) => a + (counts[t] || 0), 0);
+    $('jar-unit').innerHTML = `Each coin = 1,000,000 sats (0.01 BTC)${n ? ` · ${n.toLocaleString()} coins today` : ''}`;
+  };
   addEventListener('resize', resize);
   return {
     init() { resize(); },
     /** Show `btcByFund` worth of coins (re-scaling the coin size if the pile would overflow). */
     set(btcByFund, { animate = false } = {}) {
-      const total = Object.values(btcByFund).reduce((a, b) => a + b, 0);
-      while (total / unit > capacity()) unit *= 2;
       counts = Object.fromEntries(T.map((t) => [t, Math.floor((btcByFund[t] || 0) / unit)]));
       rebuild(animate);
-      $('jar-unit').textContent = `Each coin ≈ ${num(unit, unit < 1 ? 2 : 0)} BTC`;
     },
     setUnit(u) { unit = u; },
     /** New bitcoin bought by `t`: add coins (if a full coin's worth) and pop a "+x BTC" label. */
     add(t, btc, prevBtc) {
-      const before = Math.floor(prevBtc / unit), after = Math.floor((prevBtc + btc) / unit);
-      for (let i = 0; i < after - before; i++) { counts[t] = (counts[t] || 0) + 1; place(t, true, i * 90); }
+      const before = Math.floor(prevBtc / unit), after = Math.floor((prevBtc + btc) / unit), n = after - before;
+      counts[t] = (counts[t] || 0) + n;
+      // rain up to ~80 coins per update (the readout keeps the exact count)
+      const shown = Math.min(n, 80);
+      for (let i = 0; i < shown; i++) place(t, true, i * Math.min(70, 1500 / shown));
+      footer();
       // the "+x BTC" pops rise from just above the pile, below the big number
       const pileTop = H - 10 - Math.max(0, ...cols) * TH;
       const x = W * (0.2 + Math.random() * 0.6);
@@ -220,6 +394,11 @@ const jar = (() => {
       kick();
     },
     get unit() { return unit; },
+    explode,
+    rocket,
+    /** Where the top of the pile is, and how wide the jar is (for placing effects). */
+    get pileTop() { return H - 10 - Math.max(0, ...(cols.length ? cols : [0])) * TH; },
+    get size() { return { W, H }; },
   };
 })();
 
@@ -327,6 +506,111 @@ const stack = (() => {
   };
 })();
 
+
+/* ================= the party: bulls dance, bears fall over ================= */
+const BULL = `<svg viewBox="0 0 80 80" class="bull-svg"><g class="legs"><rect x="27" y="62" width="8" height="14" rx="3" fill="#B8650A"/><rect x="45" y="62" width="8" height="14" rx="3" fill="#B8650A"/></g>
+  <ellipse cx="40" cy="58" rx="20" ry="13" fill="#F7931A"/><text x="40" y="63" text-anchor="middle" font-size="13" font-weight="800" fill="#7A3E00" font-family="DM Sans,sans-serif">₿</text>
+  <path d="M22 22C10 20 6 10 10 4c2 7 8 11 16 12z" fill="#FFF1D6"/><path d="M58 22c12-2 16-12 12-18-2 7-8 11-16 12z" fill="#FFF1D6"/>
+  <ellipse cx="40" cy="30" rx="19" ry="17" fill="#F7931A"/><ellipse cx="22" cy="24" rx="6" ry="4" fill="#E07E0C" transform="rotate(-25 22 24)"/><ellipse cx="58" cy="24" rx="6" ry="4" fill="#E07E0C" transform="rotate(25 58 24)"/>
+  <g class="shades"><rect x="25" y="22" width="13" height="8" rx="3" fill="#111"/><rect x="42" y="22" width="13" height="8" rx="3" fill="#111"/><rect x="37" y="24" width="6" height="2" fill="#111"/><rect x="27" y="23" width="4" height="2" fill="#555"/><rect x="44" y="23" width="4" height="2" fill="#555"/></g>
+  <g class="eyes-closed" stroke="#7A3E00" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M28 27q4 3 8 0"/><path d="M44 27q4 3 8 0"/></g>
+  <path class="tear" d="M31 31q-2 4 0 6q2 -2 0 -6z" fill="#7EC8FF"/>
+  <ellipse cx="40" cy="39" rx="11" ry="7.5" fill="#FFD3A0"/><ellipse cx="36" cy="38" rx="1.8" ry="2.4" fill="#7A3E00"/><ellipse cx="44" cy="38" rx="1.8" ry="2.4" fill="#7A3E00"/>
+  <circle cx="40" cy="45" r="4" fill="none" stroke="#FFD24A" stroke-width="2"/>
+  <path class="mouth-happy" d="M35 43q5 4 10 0" stroke="#7A3E00" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+  <path class="mouth-sad" d="M35 45q5 -3.5 10 0" stroke="#7A3E00" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>`;
+const BEAR = `<svg viewBox="0 0 80 80" class="bear-svg"><rect x="27" y="62" width="9" height="14" rx="4" fill="#5E3B20"/><rect x="44" y="62" width="9" height="14" rx="4" fill="#5E3B20"/>
+  <ellipse cx="40" cy="57" rx="19" ry="14" fill="#7A4E2D"/><ellipse cx="40" cy="60" rx="11" ry="8" fill="#A7764C"/>
+  <circle cx="25" cy="15" r="7" fill="#7A4E2D"/><circle cx="55" cy="15" r="7" fill="#7A4E2D"/><circle cx="25" cy="15" r="3.5" fill="#C79A6B"/><circle cx="55" cy="15" r="3.5" fill="#C79A6B"/>
+  <circle cx="40" cy="30" r="18" fill="#7A4E2D"/><ellipse cx="40" cy="37" rx="9" ry="7" fill="#C79A6B"/><ellipse cx="40" cy="34" rx="3.6" ry="2.6" fill="#222"/>
+  <g class="hat"><path d="M33 13L41 -8L49 13z" fill="#FF4FA3"/><path d="M36 6l10 2M38 0l7 1.5" stroke="#FFD24A" stroke-width="2"/><circle cx="41" cy="-9" r="3.2" fill="#FFD24A"/></g>
+  <g class="eyes-open"><circle cx="33" cy="26" r="2.2" fill="#111"/><circle cx="47" cy="26" r="2.2" fill="#111"/></g>
+  <g class="eyes-happy" stroke="#111" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M30 27q3 -4 6 0"/><path d="M44 27q3 -4 6 0"/></g>
+  <g class="eyes-x" stroke="#111" stroke-width="1.8" stroke-linecap="round"><path d="M30.5 23.5l5 5M35.5 23.5l-5 5"/><path d="M44.5 23.5l5 5M49.5 23.5l-5 5"/></g>
+  <path class="mouth-sad" d="M36 41q4 -3 8 0" stroke="#3B2412" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+  <path class="mouth-happy" d="M34 39q6 6 12 0z" fill="#3B2412"/></svg>`;
+
+const fx = (() => {
+  const layer = $('fx'), jarEl = document.querySelector('.jar');
+  let sleepy = null, bearTimer = null;
+  const live = () => layer.querySelectorAll('.critter:not(.sleepy)').length;
+  function spawn(cls, svg, ms, style = {}) {
+    if (reduceMotion || live() >= 5) return null;
+    const el = document.createElement('div');
+    el.className = `critter ${cls}`;
+    el.innerHTML = svg;
+    Object.assign(el.style, style);
+    layer.append(el);
+    setTimeout(() => el.remove(), ms);
+    return el;
+  }
+  return {
+    /** A bull in sunglasses hops in and dances. */
+    bull(delay = 0) {
+      setTimeout(() => {
+        const left = 6 + Math.random() * 78;
+        spawn('bull', BULL, 3400, { left: `${left}%`, '--flip': Math.random() < 0.5 ? -1 : 1 });
+      }, delay);
+    },
+    /** A bear wanders in from a side, wobbles, and falls over seeing stars. */
+    bear(delay = 0) {
+      setTimeout(() => {
+        const fromLeft = Math.random() < 0.5;
+        const el = spawn(`bear ${fromLeft ? 'from-left' : 'from-right'}`, BEAR + '<span class="stars">✦ ✧ ✦</span>', 4200, { left: fromLeft ? '14%' : '70%' });
+        if (el) setTimeout(() => el.classList.add('knocked'), 1500);
+      }, delay);
+    },
+    /** Whole-jar flash and shake for a mega buy. */
+    mega() {
+      if (reduceMotion) return;
+      jarEl.classList.remove('shake', 'flash'); void jarEl.offsetWidth; jarEl.classList.add('shake', 'flash');
+      setTimeout(() => jarEl.classList.remove('shake', 'flash'), 700);
+    },
+    /**
+     * While the ATM is paused the roles flip: the bull sleeps (sad) in the corner and
+     * bears in party hats keep dancing in.
+     */
+    paused(on) {
+      if (on && !sleepy && !reduceMotion) {
+        sleepy = document.createElement('div');
+        sleepy.className = 'critter sleepy';
+        sleepy.innerHTML = BULL + '<span class="zzz"><i>z</i><i>z</i><i>z</i></span>';
+        layer.append(sleepy);
+        const dance = () => { if (!sleepy) return; this.happyBear(); bearTimer = setTimeout(dance, 4500 + Math.random() * 3500); };
+        bearTimer = setTimeout(dance, 900);
+      } else if (!on && sleepy) { sleepy.remove(); sleepy = null; clearTimeout(bearTimer); }
+    },
+    /** A bear in a party hat dances (the ATM is paused, so bears are winning). */
+    happyBear(delay = 0) {
+      setTimeout(() => spawn('bear happy', BEAR, 3400, { left: `${8 + Math.random() * 64}%`, '--flip': Math.random() < 0.5 ? -1 : 1 }), delay);
+    },
+  };
+})();
+
+/** How big a party a buy gets: sparks always, bulls often, explosions + falling bears for big ones. */
+function celebrate(t, btc) {
+  const { W } = jar.size, y = jar.pileTop - 6;
+  const x = W * (0.25 + Math.random() * 0.5);
+  if (btc >= 25) {
+    // the finale
+    jar.explode(W / 2, y, 3.2); setTimeout(() => jar.explode(W * 0.3, y - 20, 2), 160); setTimeout(() => jar.explode(W * 0.7, y - 30, 2), 320);
+    fx.mega(); sound.boom(1.6);
+    jar.rocket('btc', 0);
+    for (let i = 1; i < 9; i++) jar.rocket(null, i * 140 + Math.random() * 120);
+    setTimeout(() => { fx.mega(); sound.boom(1.2); jar.rocket('btc', 0); jar.rocket('willow', 120); jar.rocket('ring', 240); }, 1500);
+    fx.bull(0); fx.bull(250); fx.bull(500); fx.bull(750); fx.bear(200); fx.bear(900);
+  } else if (btc >= 5) {
+    jar.explode(x, y, 2); sound.boom(1);
+    for (let i = 0; i < 3; i++) jar.rocket(null, i * 180);
+    fx.bull(0);
+    if (Math.random() < 0.6) fx.bear(150);
+  } else {
+    jar.explode(x, y, 1);
+    if (Math.random() < 0.45) jar.rocket();
+    if (Math.random() < 0.35) fx.bull(0);
+  }
+}
+
 /* ================= today: readout + per-minute chart ================= */
 const todayBig = roller($('today-big'));
 let preview = null; // when running, the readout shows preview numbers instead of real ones
@@ -345,6 +629,7 @@ function renderTodayReadout() {
   $('jar-badge').textContent = open ? 'ATM open' : live ? 'Below par' : 'Market closed';
   $('jar-badge').classList.toggle('closed', !open);
   $('preview').hidden = open;
+  fx.paused(!open && !preview);
 }
 
 let pmChart;
@@ -589,7 +874,7 @@ function recompute(fromPoll = false) {
     // new at-par volume → coins fall into today's jar (and sparkle on the since-launch heap)
     for (const t of T) {
       const prev = lastToday[t]?.btc ?? today[t].btc, d = today[t].btc - prev;
-      if (d > 0.0005) { jar.add(t, d, prev); stack.sparkle(t, `+${num(d, 2)} BTC`); }
+      if (d > 0.0005) { jar.add(t, d, prev); celebrate(t, d); stack.sparkle(t, `+${num(d, 2)} BTC`); }
     }
     drawPerMinute();
     renderDaysTable();
@@ -610,10 +895,7 @@ function recompute(fromPoll = false) {
     jar.init();
     recompute();
     // a typical ATM day sets the coin size, so a normal day fills the jar nicely
-    const activeDays = T.flatMap((t) => hist[t].filter((r) => r.btc > 0)).length || 1;
-    const avgDay = T.reduce((a, t) => a + hist[t].reduce((x, r) => x + r.btc, 0), 0) / activeDays;
-    jar.setUnit(niceUnit(avgDay * 0.3)); // ≈ 200 coins on a typical ATM day
-    jar.set(Object.fromEntries(T.map((t) => [t, today[t].btc])), { animate: true });
+        jar.set(Object.fromEntries(T.map((t) => [t, today[t].btc])), { animate: true });
     drawPerMinute();
     $('preview').onclick = runPreview;
     drawHistory();
@@ -659,8 +941,9 @@ onTheme(() => { if (data) { drawHistory(); drawDaily(); drawPerMinute(); stack.f
 function runPreview() {
   if (preview) return;
   const fake = Object.fromEntries(T.map((t) => [t, 0]));
-  preview = { t0: performance.now() };
+  preview = { t0: performance.now(), n: 0 };
   $('preview').disabled = true;
+  fx.paused(false);
   $('today-sub').innerHTML = '<b class="o">Preview</b> · made-up numbers, not real data';
   jar.set(fake);
   const step = () => {
@@ -672,8 +955,10 @@ function runPreview() {
       return;
     }
     const t = Math.random() < 0.7 ? T[0] : T[1] || T[0];
-    const d = jar.unit * (0.4 + Math.random() * 2.2);
-    jar.add(t, d, fake[t]); fake[t] += d;
+    preview.n++;
+    // every so often, a big buy or a mega buy
+    const d = preview.n % 9 === 0 ? 30 + Math.random() * 15 : preview.n % 4 === 0 ? 6 + Math.random() * 4 : 0.3 + Math.random() * 2.7;
+    jar.add(t, d, fake[t]); celebrate(t, d); fake[t] += d;
     const sum = Object.values(fake).reduce((a, b) => a + b, 0);
     todayBig(`+${num(sum, sum >= 100 ? 2 : 4)} BTC`);
     $('today-split').innerHTML = T.map((x) => `<span><i class="dot" style="background:${A[x].color}"></i>${x} ${num(fake[x], 1)}</span>`).join('');
