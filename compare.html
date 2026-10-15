@@ -15,20 +15,10 @@
     <div class="layout inputs-first">
       <div>
         <h1 class="title">Sell bitcoin, or live off income?</h1>
-        <p class="sentence">Two ways to pay your bills from the same starting point, replayed on real prices, including the 2026 crash.</p>
+        <p class="sentence">Same starting money, two ways to pay your bills, replayed on real prices (including the 2026 crash).</p>
 
-        <div class="versus" id="versus">
-          <div class="vcard" id="card-a">
-            <div class="vhead"><span class="vtag a">A</span> Sell bitcoin</div>
-            <p class="vdesc">Extra savings buy more bitcoin. Every month you sell enough bitcoin to pay the bills and the tax.</p>
-            <div class="vrows" id="rows-a"></div>
-          </div>
-          <div class="vcard" id="card-b">
-            <div class="vhead"><span class="vtag b">B</span> Live off income</div>
-            <p class="vdesc">Your bitcoin stays put. Extra savings buy income funds whose payouts pay the bills. Short? Borrow a little.</p>
-            <div class="vrows" id="rows-b"></div>
-          </div>
-        </div>
+        <div class="ctable-wrap"><table class="ctable" id="ctable"></table></div>
+        <p class="crules"><span class="dot" style="background:#9AA4AE"></span><b>Sell bitcoin:</b> income pays the bills first, then bitcoin is sold for the rest (plus the tax). <span class="dot" style="background:var(--brand)"></span><b>Keep bitcoin:</b> bitcoin is never sold; income pays the bills, and any shortfall is borrowed.</p>
         <p class="summary" id="summary"></p>
 
         <div class="chart-wrap"><canvas id="chart" aria-label="Strategy A versus strategy B over time"></canvas></div>
@@ -47,24 +37,37 @@
 
         <section class="block about">
           <h2>How this works</h2>
-          <p><b>Same start, two paths.</b> Both strategies start with the same bitcoin and the same extra savings, and both pay the same bills on the 1st of every month.</p>
-          <p><b>A, sell bitcoin:</b> the extra savings buy more bitcoin on day one. Each month it sells the oldest bitcoin first, enough to cover the bill <i>and</i> the capital-gains tax on that sale.</p>
-          <p><b>B, live off income:</b> the extra savings buy the income mix you pick, using real past payouts. Payouts pay the bills (after any tax). If they fall short, the gap is borrowed at your margin rate. Extra income pays the loan down first, then buys more income funds. Your bitcoin is never sold.</p>
+          <p><b>Same start, two paths.</b> Both plans start with the same money on the same day. Each splits it between bitcoin and the income mix you pick, and both pay the same bills on the 1st of every month, using real past prices and payouts.</p>
+          <p><b>Sell bitcoin:</b> any income pays the bills first. Whatever's left is covered by selling the oldest bitcoin first, enough to pay the bill <i>and</i> the capital-gains tax on that sale.</p>
+          <p><b>Keep bitcoin:</b> income pays the bills (after any tax). If it falls short, the gap is borrowed at your borrowing rate, and bitcoin is never sold. Leftover income pays the loan down first, then is split between buying more bitcoin and buying more income funds, however you choose. Selling handles its leftovers the same way.</p>
           <p class="muted">Simplified: ignores trading fees, assumes your broker lends against your holdings at the rate you choose, and doesn't model margin calls. Watch the "Loan vs. holdings" number. Above about 30–40%, a real broker may start selling for you. <a class="o" href="learn.html#never-sell">Read the full strategy, risks included</a></p>
         </section>
       </div>
 
       <aside class="side">
         <div class="panel">
-          <h3>Your situation</h3>
-          <div class="prow"><label for="btc">Bitcoin I own</label><div class="ctl"><input class="field" id="btc" type="number" inputmode="decimal" min="0" step="0.01" value="0.5" /></div></div>
-          <div class="prow"><label for="basis" id="basis-lbl">I paid per bitcoin</label><div class="ctl money"><input class="field" id="basis" type="number" inputmode="decimal" min="0" step="1000" value="30000" /></div></div>
-          <div class="prow"><label for="need">I need each month</label><div class="ctl money"><input class="field" id="need" type="number" inputmode="decimal" min="0" step="50" value="500" /></div></div>
-          <div class="prow"><label for="extra" id="extra-lbl">Extra savings</label><div class="ctl money"><input class="field" id="extra" type="number" inputmode="decimal" min="0" step="1000" value="50000" /></div></div>
-          <div class="label-row">Income mix for B</div>
+          <h3>Set it up</h3>
+          <div class="prow"><label for="money" id="money-lbl">Starting money</label><div class="ctl money"><input class="field" id="money" type="number" inputmode="decimal" min="0" step="1000" value="10000" /></div></div>
+          <div class="quick" id="quick"></div>
+          <div class="prow"><label for="need">Bills each month</label><div class="ctl money"><input class="field" id="need" type="number" inputmode="decimal" min="0" step="10" value="50" /></div></div>
+
+          <div class="label-row">How much goes into bitcoin?</div>
+          <div class="mix-row plan-row"><b><span class="dot" style="background:#9AA4AE"></span>Sell</b><input type="range" min="0" max="100" step="5" id="pct-a" value="100" aria-label="Plan A bitcoin percent" /><output id="out-a">100%</output></div>
+          <div class="mix-row plan-row"><b><span class="dot" style="background:var(--brand)"></span>Keep</b><input type="range" min="0" max="100" step="5" id="pct-b" value="50" aria-label="Plan B bitcoin percent" /><output id="out-b">50%</output></div>
+          <p class="note-sm" id="split-note"></p>
+
+          <div class="label-row">Income funds (the rest)</div>
           <div class="choices" id="styles"></div>
-          <div class="prow"><label for="apr" id="apr-lbl">Borrowing rate</label><div class="ctl pct-in"><input class="field" id="apr" type="number" inputmode="decimal" min="0" max="25" step="0.25" value="8" /></div></div>
-          <div class="prow"><label for="held" id="held-lbl">Held over a year</label><select class="field ctl" id="held"><option value="yes" selected>Yes</option><option value="no">No</option></select></div>
+
+          <div class="label-row">Leftover income after bills</div>
+          <div class="choices simple-only" id="leftover"></div>
+          <div class="adv">
+            <div class="mix-row plan-row"><b style="font-weight:500;font-size:13px">To BTC</b><input type="range" min="0" max="100" step="5" id="to-btc" value="50" aria-label="Share of leftover income that buys bitcoin" /><output id="out-btc">50%</output></div>
+            <p class="note-sm">The rest is reinvested in the income funds. Leftovers always pay down any loan first.</p>
+            <div class="prow"><label for="apr" id="apr-lbl">Borrowing rate</label><div class="ctl pct-in"><input class="field" id="apr" type="number" inputmode="decimal" min="0" max="25" step="0.25" value="8" /></div></div>
+            <div class="prow"><label for="basis" id="basis-lbl">Bitcoin cost basis</label><div class="ctl money"><input class="field" id="basis" type="number" inputmode="decimal" min="0" step="1000" placeholder="start price" /></div></div>
+            <div class="prow"><label for="held" id="held-lbl">Held over a year</label><select class="field ctl" id="held"><option value="no" selected>No</option><option value="yes">Yes</option></select></div>
+          </div>
           <div class="panel-foot" id="period"></div>
         </div>
       </aside>

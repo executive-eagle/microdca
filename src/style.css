@@ -476,22 +476,73 @@ html, body { overflow-x: clip; }
 }
 @media (max-width: 380px) { .rangebar { gap: 11px; } .rangebar button { font-size: 12.5px; } }
 
-/* ================= sell vs. income ================= */
-.versus { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 22px; }
-@media (max-width: 640px) { .versus { grid-template-columns: 1fr; } }
-.vcard { border: 1px solid var(--line); border-radius: 10px; padding: 18px 18px 8px; }
-#card-b { border-color: rgba(247, 147, 26, 0.55); }
-.vhead { font-weight: 600; font-size: 17px; display: flex; align-items: center; gap: 8px; }
-.vtag { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #000; }
-.vtag.a { background: #9AA4AE; }
-.vtag.b { background: var(--brand); }
-.vdesc { font-size: 13px; color: var(--muted); margin: 6px 0 8px; }
-.vrow { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
-.vrow .k { color: var(--fg-2); flex: none; }
-.vrow .v { text-align: right; font-weight: 500; }
-.vrow .v b { font-size: 16px; }
 .warn { color: #D6A12B; }
 
 .path.wide { margin-top: 16px; min-height: 0 !important; }
 @media (max-width: 760px) { .tabbar a { font-size: 10px; } }
 @media (max-width: 960px) { .layout.inputs-first > .side { order: -1; } }
+
+.vmix { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--muted); }
+.vtag.sm { width: 20px; height: 20px; font-size: 11px; }
+.plan-row { grid-template-columns: 56px 1fr 44px; }
+
+/* ================= Robinhood-flat pass ================= */
+/* comparison table */
+.ctable-wrap { margin-top: 22px; }
+.ctable { width: 100%; border-collapse: collapse; font-size: 14.5px; table-layout: fixed; }
+.ctable th, .ctable td { padding: 13px 0 13px 12px; border-bottom: 1px solid var(--line); text-align: right; vertical-align: top; font-weight: 500; }
+.ctable th[scope='row'] { text-align: left; font-weight: 400; color: var(--fg-2); padding-left: 0; width: 34%; }
+.ctable thead th { font-weight: 600; font-size: 15px; padding-top: 0; }
+.ctable thead th:first-child { padding-left: 0; }
+.ctable .cs { font-size: 12px; font-weight: 400; margin-top: 2px; }
+.ctable .dot { margin-right: 6px; vertical-align: 1px; }
+.ctable tr.total th, .ctable tr.total td { border-bottom: 0; font-size: 18px; font-weight: 600; padding-top: 16px; }
+.ctable tr.total th { color: var(--fg); }
+@media (max-width: 600px) { .ctable { font-size: 13px; } .ctable th[scope='row'] { width: 32%; } .ctable thead th { font-size: 13.5px; } .ctable tr.total th, .ctable tr.total td { font-size: 15.5px; } }
+.crules { font-size: 13px; color: var(--muted); margin: 12px 0 0; line-height: 1.6; }
+.crules b { color: var(--fg-2); font-weight: 600; }
+.crules .dot { margin: 0 5px 1px 0; }
+.crules .dot + b { margin-right: 2px; }
+
+/* choices: flat list rows, radio on the right */
+.choices { gap: 0; border-top: 1px solid var(--line); margin-top: 4px; }
+.choice { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 12px 0; background: none !important;
+  grid-template-columns: minmax(0, 1fr) 18px; grid-template-areas: 't r' 'd r'; column-gap: 12px; }
+.choice .radio { grid-area: r; align-self: center; margin: 0; }
+.choice .t { grid-area: t; }
+.choice .d { grid-area: d; grid-column: auto; }
+.choice:hover { border-color: var(--line); }
+.choice:hover .t { color: var(--brand); }
+.choice.active .t { color: var(--fg); }
+
+/* home: a clean list instead of cards */
+.paths { grid-template-columns: 1fr; gap: 0; border-top: 1px solid var(--line); margin-top: 32px; }
+.path, .path.wide { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 22px 36px 22px 0; min-height: 0 !important; margin: 0; position: relative; transform: none !important; }
+.path::after { content: ''; position: absolute; right: 6px; top: 50%; width: 9px; height: 9px; border-top: 2px solid var(--muted); border-right: 2px solid var(--muted); transform: translateY(-50%) rotate(45deg); transition: right 0.2s, border-color 0.2s; }
+.path:hover::after { right: 2px; border-color: var(--brand); }
+.path:hover .q { color: var(--brand); }
+.path .q { font-size: 19px; }
+.path .a { margin-top: 6px; }
+.path .go { display: none; }
+
+/* risk: small colored-dot label, not a pill */
+.risk { background: none !important; padding: 0; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; }
+.risk::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.r-unknown { color: var(--muted); }
+
+/* plain chips and pills */
+.quick button { border: 0; background: var(--field); color: var(--fg-2); }
+.quick button:hover { color: var(--fg); }
+.quick button.active { background: var(--fg); color: var(--bg); }
+.btc-now { border: 0; padding: 0; border-radius: 0; }
+.toc { gap: 6px 18px; }
+.toc a { border: 0; padding: 4px 0; border-radius: 0; color: var(--fg-2); }
+.toc a:hover { color: var(--brand); }
+
+/* quieter outlines and underlines */
+.panel, .earn { border-color: var(--line); border-radius: 8px; }
+.term { border-bottom-color: var(--line-2); }
+
+.learn-head { padding-bottom: 28px; }
+.toc { margin-top: 18px; }
+.choice.active { border-color: var(--line); }
